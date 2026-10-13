@@ -1,0 +1,18 @@
+name: Check deployment configuration
+on:
+  pull_request:
+  push:
+    branches: [main, 'ci/**']
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Test SHA selection and publication gates
+        run: python3 -m unittest discover -s tests -v
+      - name: Check Python syntax
+        run: python3 -m py_compile scripts/*.py
