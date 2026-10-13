@@ -1,0 +1,106 @@
+name: Deploy experimental Web build
+
+on:
+  schedule:
+    - cron: '3-58/5 * * * *'
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: 'Optional full source main SHA; empty checks current main'
+        required: false
+        type: string
+  repository_dispatch:
+    types: [source-main-push]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: experimental-github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      publish: ${{ steps.fresh.outputs.current }}
+      source_sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check source main and checkout the exact SHA
+        id: source
+        env:
+          SOURCE_DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
+        run: python3 scripts/source.py --directory "$RUNNER_TEMP/private-source"
+      - name: Install official matching Godot and Web templates
+        if: steps.source.outputs.changed == 'true'
+        run: python3 scripts/install_godot.py --directory "$RUNNER_TEMP/godot"
+      - name: Run source regression suite and export single-thread release
+        if: steps.source.outputs.changed == 'true'
+        run: python3 scripts/build.py --source "$RUNNER_TEMP/private-source" --output "$RUNNER_TEMP/site"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.source.outputs.changed == 'true'
+        with:
+          node-version: '22'
+      - name: Install locked browser verification dependencies
+        if: steps.source.outputs.changed == 'true'
+        run: |
+          npm ci --ignore-scripts
+          npx playwright install --with-deps chromium
+      - name: Verify actual Web runtime at a project subpath
+        if: steps.source.outputs.changed == 'true'
+        run: node scripts/smoke.mjs --directory "$RUNNER_TEMP/site"
+      - name: Confirm main has not advanced during the build
+        if: steps.source.outputs.changed == 'true'
+        id: fresh
+        env:
+          SOURCE_DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: python3 scripts/source.py --fresh "$SOURCE_SHA"
+      - name: Upload only the verified public runtime
+        if: steps.fresh.outputs.current == 'true'
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: ${{ runner.temp }}/site
+          retention-days: 1
+
+  deploy:
+    if: needs.build.outputs.publish == 'true'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish verified runtime atomically
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+      - name: Verify deployed source SHA
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
+        run: |
+          python3 - <<'PY'
+          import json, os, time, urllib.request
+          for attempt in range(12):
+              try:
+                  with urllib.request.urlopen(os.environ['PAGE_URL'] + 'deployment.json', timeout=15) as response:
+                      if json.load(response)['source_sha'] == os.environ['SOURCE_SHA']:
+                          print('Deployed source SHA verified')
+                          break
+              except Exception:
+                  pass
+              time.sleep(5)
+          else:
+              raise SystemExit('Deployment verification failed')
+          PY
