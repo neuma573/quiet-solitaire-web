@@ -43,7 +43,8 @@ const browser = await chromium.launch({ headless: true,
   executablePath: process.env.CHROME_BIN || (process.platform === 'darwin' && existsSync(chrome) ? chrome : undefined),
   args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 try {
-  const page = await browser.newPage({ viewport: { width: 390, height: 760 }, locale: 'ko-KR' });
+  const pixelDensity = Number(option('--density') || 2);
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: pixelDensity, locale: 'ko-KR' });
   const errors = [];
   page.on('pageerror', () => errors.push('JavaScript exception'));
   page.on('console', (message) => {
@@ -60,35 +61,80 @@ try {
   await page.waitForTimeout(2500);
   const canvas = page.locator('#canvas');
   assert(await canvas.isVisible(), 'Game canvas must be visible');
+  async function verifyPhone() {
+    const bitmap = await canvas.evaluate((element) => ({ width: element.width, height: element.height }));
+    const density = await page.evaluate(() => window.devicePixelRatio);
+    assert.deepEqual(bitmap, { width: Math.round(390 * density), height: Math.round(760 * density) },
+      'Game must keep a 390x760 logical resolution with matching high-density rendering at every browser size');
+    const viewport = page.viewportSize();
+    const scale = Math.min(1, viewport.width / 390, viewport.height / 760);
+    const box = await canvas.boundingBox();
+    for (const [name, expected] of Object.entries({ width: 390 * scale, height: 760 * scale,
+      x: (viewport.width - 390 * scale) / 2, y: (viewport.height - 760 * scale) / 2 })) {
+      assert(Math.abs(box[name] - expected) < 0.1, `Phone canvas must preserve its proportions and stay centered: ${name}`);
+    }
+    return box;
+  }
+  await verifyPhone();
   const start = await canvas.screenshot();
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.waitForTimeout(300);
+  await verifyPhone();
+  assert(start.equals(await canvas.screenshot()), 'Resizing a desktop window must preserve the exact phone layout');
   if (option('--screenshot')) await page.screenshot({ path: option('--screenshot') });
+  async function click(x, y) {
+    const box = await canvas.boundingBox();
+    await page.mouse.click(box.x + x * box.width / 390, box.y + y * box.height / 760);
+  }
   // Actual mouse events exercise the same menu-to-game path as a browser player.
   // Coordinates are relative to the source's 390x760 portrait viewport.
-  await page.mouse.click(195, 620);
+  await click(195, 620);
   await page.waitForTimeout(800);
   const after = await canvas.screenshot();
   assert(!start.equals(after), 'A menu interaction must change the rendered game');
-  await page.mouse.click(195, 700);
+  await click(195, 700);
   await page.waitForTimeout(800);
   const scoring = await canvas.screenshot();
   assert(!scoring.equals(after), 'Choosing a game must open scoring selection');
-  await page.mouse.click(195, 700);
+  await click(195, 700);
   await page.waitForTimeout(2000);
   const game = await canvas.screenshot();
   assert(!game.equals(scoring), 'Starting a game must render the card board');
-  const boardClip = { x: 0, y: 64, width: 390, height: 400 };
+  if (option('--screenshot')) await page.screenshot({ path: option('--screenshot').replace(/\.png$/, '-desktop-game.png') });
+  const gameBox = await verifyPhone();
+  const desktopBoard = await page.screenshot({ clip: { x: gameBox.x, y: gameBox.y + 64, width: 390, height: 400 } });
+  await page.setViewportSize({ width: 390, height: 760 });
+  await page.waitForTimeout(300);
+  await verifyPhone();
+  // Keep the header's running timer outside the comparison area.
+  const phoneBoard = await page.screenshot({ clip: { x: 0, y: 64, width: 390, height: 400 } });
+  assert(desktopBoard.equals(phoneBoard), 'Moving from desktop to phone must preserve card layout and game state');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.waitForTimeout(300);
+  const desktopBox = await verifyPhone();
+  const resizedBoard = await page.screenshot({ clip: { x: desktopBox.x, y: desktopBox.y + 64, width: 390, height: 400 } });
+  assert(phoneBoard.equals(resizedBoard), 'Moving between phone and desktop browser sizes must preserve card layout and game state');
+  await page.setViewportSize({ width: 800, height: 400 });
+  await page.waitForTimeout(300);
+  await verifyPhone();
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.waitForTimeout(300);
+  const smallBox = await verifyPhone();
+  const smallScale = smallBox.width / 390;
+  const boardClip = { x: smallBox.x, y: smallBox.y + 64 * smallScale,
+    width: smallBox.width, height: 400 * smallScale };
   const beforeDraw = await page.screenshot({ clip: boardClip });
-  await page.mouse.click(35, 105);
+  await click(35, 105);
   await page.waitForTimeout(600);
   const drawn = await page.screenshot({ clip: boardClip });
   assert(!beforeDraw.equals(drawn), 'Drawing from stock must change the card board');
-  await page.mouse.click(154, 724);
+  await click(154, 724);
   await page.waitForTimeout(600);
   const undone = await page.screenshot({ clip: boardClip });
   assert(beforeDraw.equals(undone), 'Undo must restore the exact rendered card board');
   if (option('--screenshot')) await page.screenshot({ path: option('--screenshot').replace(/\.png$/, '-game.png') });
   assert.equal(errors.length, 0, 'Runtime must start and respond without console/asset errors');
-  console.log(`Browser runtime passed: project subpath, WebAssembly MIME, Korean menu, play, stock draw and undo; source ${deployment.source_sha}`);
+  console.log(`Browser runtime passed: fixed 390x760 phone on desktop, portrait and landscape at ${pixelDensity}x pixel density; resize preserves state; scaled input, stock draw and undo; source ${deployment.source_sha}`);
 } finally {
   await browser.close();
   if (server) await new Promise((done) => server.close(done));

@@ -73,6 +73,8 @@ def build(source: Path, output: Path, godot: str, pipeline_sha: str, templates: 
         with project_file.open("a") as stream:
             stream.write('\n[gui]\ntheme/custom_font="res://web-fonts/' + font_config["filename"] + '"\n')
         preset = (ROOT / "web/export_presets.cfg").read_text()
+        preset = preset.replace('html/custom_html_shell=""',
+                                f'html/custom_html_shell="{ROOT / "web/shell.html"}"')
         if templates:
             preset = preset.replace('custom_template/release=""',
                                     f'custom_template/release="{templates.resolve()}"')
