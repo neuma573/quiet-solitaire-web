@@ -6,7 +6,7 @@ import { handle } from '../worker/index.mjs';
 const env = { WEBHOOK_SECRET: 'test-secret', GITHUB_DISPATCH_TOKEN: 'test-token' };
 const sha = 'a'.repeat(40);
 const delivery = '00000000-0000-4000-8000-000000000000';
-const repo = { id: 1400879584, full_name: 'neuma573/quiet-solitare', private: true };
+const repo = { id: 1400879584, full_name: 'neuma573/quiet-solitaire', private: true };
 const merged = { repository: repo, action: 'closed', pull_request: {
   merged: true, merge_commit_sha: sha, base: { ref: 'main', repo } } };
 function request(payload, event = 'pull_request', secret = env.WEBHOOK_SECRET) {
@@ -46,7 +46,9 @@ test('ping works but push, unmerged closure and non-main merge do not dispatch',
   ]) assert.equal((await handle(request(payload, event), env, noDispatch)).status, 202);
 });
 test('other repository and invalid merge SHA never dispatch', async () => {
-  assert.equal((await handle(request({ ...merged, repository: { ...repo, id: 1 } }), env, noDispatch)).status, 403);
+  for (const invalid of [
+    { ...repo, id: 1 }, { ...repo, full_name: 'neuma573/quiet-solitare' }, { ...repo, private: false }
+  ]) assert.equal((await handle(request({ ...merged, repository: invalid }), env, noDispatch)).status, 403);
   for (const value of ['main', '0'.repeat(40), null]) {
     assert.equal((await handle(request({ ...merged, pull_request: { ...merged.pull_request, merge_commit_sha: value } }), env, noDispatch)).status, 400);
   }

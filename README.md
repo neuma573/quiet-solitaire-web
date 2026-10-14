@@ -1,7 +1,7 @@
 # Quiet solitare experimental Web build
 
 앱 프로젝트의 브라우저 실험을 위한 별도 배포 저장소입니다. 정식 웹 출시를 위한 제품 분기가 아닙니다.
-게임 소스는 Private인 `neuma573/quiet-solitare`에만 보관하고, 여기에는 Web Export 설정과 CI/CD만 관리합니다.
+게임 소스는 Private인 `neuma573/quiet-solitaire`에만 보관하고, 여기에는 Web Export 설정과 CI/CD만 관리합니다.
 
 배포 주소: **https://neuma573.com/quiet-solitaire-web/**
 https://neuma573.github.io/quiet-solitaire-web/ 는 계정의 기존 도메인으로 이동합니다.
@@ -33,7 +33,7 @@ flowchart LR
 
 ## 원본과 보안
 
-원본에서 변경하는 것은 `quite-solitare` → `quiet-solitare` 이름, 읽기 전용 Deploy Key와 Webhook 설정뿐입니다.
+원본에서 변경하는 것은 `quiet-solitaire`로의 저장소 이름 정리, 읽기 전용 Deploy Key와 Webhook 설정뿐입니다.
 게임 코드, 기존 설정 파일, 브랜치, 커밋·태그 이력에 웹용 변경을 추가하지 않습니다.
 
 | 인증 정보 | 저장 위치 | 범위 |
@@ -68,6 +68,10 @@ npx wrangler deploy
 Worker의 `/health`는 두 Secret이 설정됐을 때만 200을 반환합니다. Secret은 Wrangler의 `secret put` 또는 `secret bulk`로 저장하고 설정 파일·Git에 기록하지 않습니다.
 원본 Settings → Webhooks에는 Worker의 `/github` URL, `application/json`, SSL 검증 활성화, `Pull requests` 이벤트와 동일한 HMAC Secret을 설정합니다.
 실제 배포된 Worker URL과 Cloudflare 계정은 `wrangler deploy` 출력에서 확인할 수 있습니다.
+
+원본 저장소 이름을 변경하면 `worker/index.mjs`와 `scripts/source.py`의 `SOURCE`도 함께 맞춥니다.
+GitHub의 이전 주소 리디렉션은 Webhook·dispatch 본문의 저장소 이름 검사에 적용되지 않습니다.
+이 참조를 바꿀 때는 웹 저장소의 main 반영과 Worker 재배포를 모두 완료해야 자동 배포가 연결됩니다.
 
 GitHub 토큰은 소유자 `neuma573`, 저장소 `quiet-solitaire-web` 한 개와 `Contents: Read and write`만 선택합니다. 원본 읽기 권한은 별도의 읽기 전용 Deploy Key에 한정합니다.
 GitHub API가 dispatch를 거부하면 Worker는 502를 반환합니다. GitHub Webhook은 실패 delivery를 자동 재시도하지 않으므로 원본 Settings → Webhooks → Recent Deliveries에서 원인을 해결한 뒤 Redeliver하거나 웹 저장소의 수동 실행을 사용합니다.
