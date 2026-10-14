@@ -77,6 +77,7 @@ GitHub API가 dispatch를 거부하면 Worker는 502를 반환합니다. GitHub 
 
 - 원본 README, 설치 엔진과 공식 템플릿을 **Godot 4.7.2 stable**로 맞추고 공식 SHA256을 확인합니다. 원본 엔진 버전이 바뀌면 자동 배포를 중단하므로 `godot-version.json`을 검토해야 합니다.
 - GDScript·GL Compatibility를 사용하며 WebAssembly·WebGL 2가 필요합니다. 스레드·GDExtension을 끕니다.
+- 게임의 논리 화면은 원본의 기준인 **390×760**으로 고정합니다. PC에서는 중앙에 같은 크기로 표시하고, 더 작은 브라우저에서는 화면 전체의 표시 크기만 같은 비율로 줄입니다. 창 크기·화면 배율이 바뀌어도 카드·메뉴 배치는 바뀌지 않습니다. 고해상도 화면에서는 렌더링 픽셀 수만 화면 배율에 맞춥니다. 웹 전용 HTML shell과 export preset만 사용하며 원본 프로젝트 설정은 수정하지 않습니다.
 - iOS 네이티브 설정·전환은 기존 Godot 폴백을 사용하고 Game Center는 사용할 수 없습니다. 네이티브 파일은 내보내지 않습니다.
 - 깨끗한 checkout의 CSV 번역을 생성하기 위해 임시 복사본에서 번역 참조를 잠시 비우고 import한 뒤 원래 `project.godot` 바이트를 복원합니다. 이후 공식 전체 테스트를 실행하고 원본 checkout은 바꾸지 않습니다.
 - 임시 복사본의 iOS export preset을 Web preset으로 대체하고, `gui/theme/custom_font`로 Noto Sans CJK를 폴백 폰트에 지정합니다. 게임 코드·번역·씬은 수정하지 않습니다.

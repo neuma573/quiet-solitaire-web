@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>$GODOT_PROJECT_NAME</title>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; }
+    body { display: flex; align-items: center; justify-content: center; overflow: hidden; background: #e9e9e9; }
+    #phone { position: relative; flex: none; width: 390px; height: 760px; transform: scale(var(--phone-scale, 1)); }
+    #canvas { display: block; width: 390px; height: 760px; border: 0; background: #f5f5f5; touch-action: none; }
+    #canvas:focus { outline: none; }
+    #status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #f5f5f5; }
+    #status-progress { width: 50%; }
+    #status-notice { margin: 24px; color: #333; font: 16px/1.5 system-ui, sans-serif; white-space: pre-line; }
+  </style>
+  $GODOT_HEAD_INCLUDE
+</head>
+<body>
+  <div id="phone">
+    <canvas id="canvas" width="390" height="760">Your browser does not support canvas.</canvas>
+    <div id="status">
+      <progress id="status-progress" aria-label="Loading game"></progress>
+      <p id="status-notice" role="alert" hidden></p>
+    </div>
+  </div>
+  <noscript>JavaScript is required to play.</noscript>
+  <script src="$GODOT_URL"></script>
+  <script>
+    const canvas = document.getElementById('canvas');
+    function fitPhone() {
+      const density = window.devicePixelRatio || 1;
+      const pixelsWide = Math.round(390 * density);
+      const pixelsHigh = Math.round(760 * density);
+      if (canvas.width !== pixelsWide) canvas.width = pixelsWide;
+      if (canvas.height !== pixelsHigh) canvas.height = pixelsHigh;
+      const viewport = window.visualViewport;
+      const width = viewport?.width ?? window.innerWidth;
+      const height = viewport?.height ?? window.innerHeight;
+      document.getElementById('phone').style.setProperty('--phone-scale', Math.min(1, width / 390, height / 760));
+    }
+    fitPhone();
+    window.addEventListener('resize', fitPhone);
+    window.visualViewport?.addEventListener('resize', fitPhone);
+
+    const config = $GODOT_CONFIG;
+    const engine = new Engine(config);
+    const progress = document.getElementById('status-progress');
+    function failed(error) {
+      console.error(error);
+      progress.hidden = true;
+      const notice = document.getElementById('status-notice');
+      notice.textContent = error instanceof Error ? error.message : String(error);
+      notice.hidden = false;
+    }
+    const missing = Engine.getMissingFeatures({ threads: $GODOT_THREADS_ENABLED });
+    if (missing.length) {
+      failed(new Error('Required browser features are missing:\n' + missing.join('\n')));
+    } else {
+      engine.startGame({ canvas, onProgress(current, total) {
+        if (total > 0) { progress.value = current; progress.max = total; }
+        else { progress.removeAttribute('value'); }
+      } }).then(() => document.getElementById('status').remove(), failed);
+    }
+  </script>
+</body>
+</html>
