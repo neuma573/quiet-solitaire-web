@@ -27,7 +27,7 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(source.requested_sha({"inputs": {"source_sha": SHA}}, "workflow_dispatch"), SHA)
 
     def test_dispatch_requires_exact_source_repository_main_and_commit(self):
-        event = {"action": "source-main-push", "client_payload": {
+        event = {"action": "source-main-merged", "client_payload": {
             "source_repository": "neuma573/quiet-solitare", "source_ref": "refs/heads/main", "source_sha": SHA}}
         self.assertEqual(source.requested_sha(event, "repository_dispatch"), SHA)
         for key, value in [("source_repository", "other/repo"), ("source_ref", "refs/heads/feature"),
@@ -44,11 +44,11 @@ class SelectionTests(unittest.TestCase):
         self.assertTrue(source.should_build(deployed, SHA, "c" * 40))
         self.assertTrue(source.should_build({}, SHA, PIPELINE))
 
-    def test_scheduled_unchanged_source_does_not_checkout_or_publish(self):
-        self.run_selection("schedule", {}, SHA, {"source_sha": SHA, "pipeline_sha": PIPELINE}, SHA)
+    def test_unchanged_source_does_not_checkout_or_publish(self):
+        self.run_selection("workflow_dispatch", {}, SHA, {"source_sha": SHA, "pipeline_sha": PIPELINE}, SHA)
 
     def test_outdated_dispatch_cannot_roll_the_live_site_back(self):
-        event = {"action": "source-main-push", "client_payload": {
+        event = {"action": "source-main-merged", "client_payload": {
             "source_repository": source.SOURCE, "source_ref": "refs/heads/main", "source_sha": SHA}}
         self.run_selection("repository_dispatch", event, "c" * 40, {}, SHA)
 

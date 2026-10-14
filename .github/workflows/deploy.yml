@@ -1,8 +1,6 @@
 name: Deploy experimental Web build
 
 on:
-  schedule:
-    - cron: '3-58/5 * * * *'
   push:
     branches: [main]
   workflow_dispatch:
@@ -12,7 +10,7 @@ on:
         required: false
         type: string
   repository_dispatch:
-    types: [source-main-push]
+    types: [source-main-merged]
 
 permissions:
   contents: read
