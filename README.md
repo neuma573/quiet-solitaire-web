@@ -1,4 +1,4 @@
-# Quiet solitare experimental Web build
+# Quiet solitaire experimental Web build
 
 앱 프로젝트의 브라우저 실험을 위한 별도 배포 저장소입니다. 정식 웹 출시를 위한 제품 분기가 아닙니다.
 게임 소스는 Private인 `neuma573/quiet-solitaire`에만 보관하고, 여기에는 Web Export 설정과 CI/CD만 관리합니다.
