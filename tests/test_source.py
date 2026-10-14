@@ -28,9 +28,10 @@ class SelectionTests(unittest.TestCase):
 
     def test_dispatch_requires_exact_source_repository_main_and_commit(self):
         event = {"action": "source-main-merged", "client_payload": {
-            "source_repository": "neuma573/quiet-solitare", "source_ref": "refs/heads/main", "source_sha": SHA}}
+            "source_repository": "neuma573/quiet-solitaire", "source_ref": "refs/heads/main", "source_sha": SHA}}
         self.assertEqual(source.requested_sha(event, "repository_dispatch"), SHA)
-        for key, value in [("source_repository", "other/repo"), ("source_ref", "refs/heads/feature"),
+        for key, value in [("source_repository", "other/repo"),
+                           ("source_repository", "neuma573/quiet-solitare"), ("source_ref", "refs/heads/feature"),
                            ("source_sha", "main"), ("source_sha", None)]:
             with self.subTest(key=key, value=value):
                 invalid = {**event, "client_payload": {**event["client_payload"], key: value}}
@@ -70,3 +71,5 @@ class SelectionTests(unittest.TestCase):
             self.assertEqual(output.read_text(), f"sha={expected_sha}\nchanged=false\n")
             self.assertFalse((root / "checkout").exists(), "No private checkout should be created")
             self.assertEqual(access.call_count, 1, "Only read main's remote SHA")
+            self.assertEqual(access.call_args.args[0],
+                             ["ls-remote", "git@github.com:neuma573/quiet-solitaire.git", "refs/heads/main"])

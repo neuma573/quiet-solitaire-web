@@ -11,7 +11,7 @@ import tempfile
 import urllib.error
 import urllib.request
 
-SOURCE = "neuma573/quiet-solitare"
+SOURCE = "neuma573/quiet-solitaire"
 PAGE = "https://neuma573.github.io/quiet-solitaire-web/"
 
 

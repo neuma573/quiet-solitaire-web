@@ -1,4 +1,4 @@
-const SOURCE = 'neuma573/quiet-solitare';
+const SOURCE = 'neuma573/quiet-solitaire';
 const SOURCE_ID = 1400879584;
 const TARGET = 'neuma573/quiet-solitaire-web';
 const MAX_BODY = 2 * 1024 * 1024;
