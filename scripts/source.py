@@ -22,7 +22,7 @@ def valid_sha(value: str) -> bool:
 def requested_sha(event: dict, name: str) -> str:
     if name == "repository_dispatch":
         payload = event.get("client_payload", {})
-        if (event.get("action") != "source-main-push" or payload.get("source_repository") != SOURCE
+        if (event.get("action") != "source-main-merged" or payload.get("source_repository") != SOURCE
                 or payload.get("source_ref") != "refs/heads/main"):
             raise ValueError("Unrecognized source dispatch")
         value = payload.get("source_sha", "")
