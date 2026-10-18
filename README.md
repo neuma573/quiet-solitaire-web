@@ -88,6 +88,7 @@ GitHub API가 dispatch를 거부하면 Worker는 502를 반환합니다. GitHub 
 - Linux 검증에서는 빌드별 Fontconfig 설정으로 번들 글꼴만 검색합니다. runner에 설치된 시스템 글꼴에 따라 레이아웃 결과가 달라지지 않게 하며 시스템 전체의 글꼴 설정은 바꾸지 않습니다. 웹 글꼴 설정은 회귀 테스트와 내보내기에 동일하게 적용합니다.
 - 임시 복사본의 iOS export preset은 Web preset으로 대체합니다. 배포에는 행 높이를 설정한 CJK 리소스만 포함하며 준비에 사용한 원본 OTF를 중복으로 넣지 않습니다.
 - 브라우저는 원본의 시스템 폰트를 제공하지 않아 웹 글꼴이 필요합니다. Arimo와 Noto는 `web/font.json`에 고정한 공식 커밋에서 다운로드하고 각각 SHA256을 검증합니다. 저작권 고지와 SIL OFL 1.1 전문은 배포물의 `FONT-LICENSE.txt`에 포함하며 원본에는 폰트를 추가하지 않습니다.
+- 런타임 배치 JSON 두 개(`assets/deals/draw-1-decks.json`, `assets/deals/draw-3-decks.json`)는 Web preset에서 명시적으로 포함합니다. PCK 검사는 둘 중 하나라도 빠지거나 다른 JSON(개발용 해답 포함)이 들어가면 게시를 거부합니다.
 - PWA·오프라인 캐시는 추가하지 않습니다. 원본과 동일하게 진행 중인 게임 재개 저장은 없으며 설정·통계 보존은 브라우저 IndexedDB 정책의 영향을 받습니다.
 - Chromium에서 실제 실행을 확인합니다. iPhone Safari의 성능·터치·안전 영역, VoiceOver는 별도 실기기 검증 대상입니다.
 
