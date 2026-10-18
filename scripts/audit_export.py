@@ -31,8 +31,9 @@ def audit(pack: Path) -> None:
     forbidden_suffixes = {".gd", ".py", ".sh", ".md", ".log", ".zip", ".tpz", ".pem", ".key", ".p12", ".mobileprovision"}
     for name in names:
         parts = Path(name).parts
+        if Path(name).suffix.lower() == ".json" and name not in RUNTIME_JSON:
+            raise ValueError("Non-runtime JSON found in runtime pack; publish refused")
         if (not parts or ".." in parts or name.startswith("/") or parts[0] in forbidden_roots
-                or (Path(name).suffix.lower() == ".json" and name not in RUNTIME_JSON)
                 or Path(name).suffix in forbidden_suffixes or Path(name).name in {"token", ".env", "export_presets.cfg"}):
             raise ValueError("Private source or development data found in runtime pack; publish refused")
     missing = RUNTIME_JSON - set(names)

@@ -63,6 +63,7 @@ class PublicPackTests(unittest.TestCase):
         for name in include:
             self.assertFalse(any(fnmatch.fnmatch(name, pattern) for pattern in exclude), name)
         for name in ("assets/deals/draw-1-solutions.json", "assets/deals/draw-3-solutions.json",
+                     "assets/branding/QuietLaunchBackground.colorset/Contents.json",
                      "docs/report.json", "tools/fixture.json", "test/fixture.json"):
             self.assertTrue(any(fnmatch.fnmatch(name, pattern) for pattern in exclude), name)
 
