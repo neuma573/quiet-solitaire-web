@@ -83,9 +83,11 @@ GitHub API가 dispatch를 거부하면 Worker는 502를 반환합니다. GitHub 
 - GDScript·GL Compatibility를 사용하며 WebAssembly·WebGL 2가 필요합니다. 스레드·GDExtension을 끕니다.
 - 게임의 논리 화면은 원본의 기준인 **390×760**으로 고정합니다. PC에서는 중앙에 같은 크기로 표시하고, 더 작은 브라우저에서는 화면 전체의 표시 크기만 같은 비율로 줄입니다. 창 크기·화면 배율이 바뀌어도 카드·메뉴 배치는 바뀌지 않습니다. 고해상도 화면에서는 렌더링 픽셀 수만 화면 배율에 맞춥니다. 웹 전용 HTML shell과 export preset만 사용하며 원본 프로젝트 설정은 수정하지 않습니다.
 - iOS 네이티브 설정·전환은 기존 Godot 폴백을 사용하고 Game Center는 사용할 수 없습니다. 네이티브 파일은 내보내지 않습니다.
-- 깨끗한 checkout의 CSV 번역을 생성하기 위해 임시 복사본에서 번역 참조를 잠시 비우고 import한 뒤 원래 `project.godot` 바이트를 복원합니다. 이후 공식 전체 테스트를 실행하고 원본 checkout은 바꾸지 않습니다.
-- 임시 복사본의 iOS export preset을 Web preset으로 대체하고, `gui/theme/custom_font`로 Noto Sans CJK를 폴백 폰트에 지정합니다. 게임 코드·번역·씬은 수정하지 않습니다.
-- 브라우저는 원본의 시스템 폰트를 제공하지 않아 CJK 폰트가 필요합니다. 폰트는 고정된 공식 notofonts 커밋에서 다운로드하고 SHA256을 검증합니다. SIL OFL 1.1 전문은 배포물의 `FONT-LICENSE.txt`에 포함하며 원본에는 폰트를 추가하지 않습니다.
+- 깨끗한 checkout의 CSV 번역과 글꼴을 생성하기 위해 임시 복사본에서 번역 참조를 잠시 비우고 import합니다. 이후 번역 참조를 복원하고 웹 전용 테마를 적용한 상태로 원본의 공식 전체 테스트를 실행합니다. 같은 테마로 Web Export하며 원본 checkout과 게임 코드·번역·씬·테스트는 바꾸지 않습니다.
+- `web/theme.tres`는 Arimo와 Noto Sans CJK를 묶고, Web의 `SystemFont`가 사용하는 기본 테마 글꼴도 지정합니다. Noto의 큰 기본 행 높이가 영어에도 적용되는 Godot 동작에 맞춰 `web/prepare_fonts.gd`에서 CJK의 행 상자를 1.25 em으로 설정하고, 일본어 버튼에는 글꼴의 비례 자간 기능 `palt`를 사용합니다. 글리프 크기와 다운로드한 폰트 데이터는 유지하며, 테스트의 최소 카드 공간 기준을 변경하지 않습니다.
+- Linux 검증에서는 빌드별 Fontconfig 설정으로 번들 글꼴만 검색합니다. runner에 설치된 시스템 글꼴에 따라 레이아웃 결과가 달라지지 않게 하며 시스템 전체의 글꼴 설정은 바꾸지 않습니다. 웹 글꼴 설정은 회귀 테스트와 내보내기에 동일하게 적용합니다.
+- 임시 복사본의 iOS export preset은 Web preset으로 대체합니다. 배포에는 행 높이를 설정한 CJK 리소스만 포함하며 준비에 사용한 원본 OTF를 중복으로 넣지 않습니다.
+- 브라우저는 원본의 시스템 폰트를 제공하지 않아 웹 글꼴이 필요합니다. Arimo와 Noto는 `web/font.json`에 고정한 공식 커밋에서 다운로드하고 각각 SHA256을 검증합니다. 저작권 고지와 SIL OFL 1.1 전문은 배포물의 `FONT-LICENSE.txt`에 포함하며 원본에는 폰트를 추가하지 않습니다.
 - PWA·오프라인 캐시는 추가하지 않습니다. 원본과 동일하게 진행 중인 게임 재개 저장은 없으며 설정·통계 보존은 브라우저 IndexedDB 정책의 영향을 받습니다.
 - Chromium에서 실제 실행을 확인합니다. iPhone Safari의 성능·터치·안전 영역, VoiceOver는 별도 실기기 검증 대상입니다.
 
@@ -104,6 +106,7 @@ npx playwright install chromium
 ```sh
 python3 scripts/build.py --source /path/to/private-checkout --output /tmp/quiet-web-site --godot /path/to/godot
 node scripts/smoke.mjs --directory /tmp/quiet-web-site
+node scripts/smoke.mjs --directory /tmp/quiet-web-site --locale ja-JP --screenshot /tmp/quiet-web-ja.png
 node scripts/smoke.mjs --url https://neuma573.com/quiet-solitaire-web/
 ```
 

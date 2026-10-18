@@ -9,18 +9,40 @@ import shutil
 import subprocess
 import tempfile
 import urllib.request
+from xml.sax.saxutils import escape
 from audit_export import audit
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def checked(command: list[str], cwd: Path, log: Path, timeout: int = 300) -> None:
+def checked(command: list[str], cwd: Path, log: Path, timeout: int = 300, *, env: dict | None = None) -> None:
     with log.open("w") as stream:
         result = subprocess.run(command, cwd=cwd, stdout=stream, stderr=subprocess.STDOUT,
-                                timeout=timeout, check=False)
+                                timeout=timeout, check=False, env=env)
     text = log.read_text(errors="replace")
     if result.returncode or re.search(r"(?:SCRIPT ERROR:|\bERROR:)", text):
         raise RuntimeError(f"Build verification failed; private diagnostic log: {log.name}")
+
+
+def prepare_fonts(project: Path, diagnostics: Path) -> dict[str, str]:
+    fonts = project / "web-fonts"
+    if fonts.exists():
+        raise RuntimeError("Source already has web-fonts; review required")
+    fonts.mkdir()
+    manifest = json.loads((ROOT / "web/font.json").read_text())
+    for config in manifest.values():
+        with urllib.request.urlopen(config["url"], timeout=60) as response:
+            data = response.read()
+        if hashlib.sha256(data).hexdigest() != config["sha256"]:
+            raise RuntimeError("Web font checksum mismatch")
+        (fonts / config["filename"]).write_bytes(data)
+    # SystemFont falls back to the project theme in Web. Isolate Fontconfig so
+    # Linux verification follows that path rather than using runner-installed fonts.
+    fontconfig = diagnostics / "fontconfig.conf"
+    fontconfig.write_text('<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\n'
+                          '<fontconfig><dir>' + escape(str(fonts)) + '</dir><cachedir>'
+                          + escape(str(diagnostics / "font-cache")) + '</cachedir></fontconfig>\n')
+    return dict(os.environ, FONTCONFIG_FILE=str(fontconfig))
 
 
 def build(source: Path, output: Path, godot: str, pipeline_sha: str, templates: Path | None) -> None:
@@ -39,39 +61,35 @@ def build(source: Path, output: Path, godot: str, pipeline_sha: str, templates: 
         directory = Path(scratch)
         project = directory / "project"
         shutil.copytree(source, project, ignore=shutil.ignore_patterns(".git", ".godot", "builds", "__pycache__"))
-        font_config = json.loads((ROOT / "web/font.json").read_text())
-        fonts = project / "web-fonts"
-        if fonts.exists():
-            raise RuntimeError("Source already has web-fonts; review required")
-        fonts.mkdir()
-        with urllib.request.urlopen(font_config["url"], timeout=60) as response:
-            font_data = response.read()
-        if hashlib.sha256(font_data).hexdigest() != font_config["sha256"]:
-            raise RuntimeError("Web fallback font checksum mismatch")
-        (fonts / font_config["filename"]).write_bytes(font_data)
+        environment = prepare_fonts(project, diagnostics)
         # A fresh checkout has no generated CSV translations yet. Import them before
         # loading the project's translation list, without masking any engine errors.
         if (project / "override.cfg").exists():
             raise RuntimeError("Unexpected source override.cfg; review required")
         project_file = project / "project.godot"
         original_config = project_file.read_bytes()
+        if b"[gui]" in original_config:
+            raise RuntimeError("Source GUI settings changed; review web font overlay")
+        web_config = original_config + b'\n[gui]\ntheme/custom="res://web-fonts/theme.tres"\n'
         temporary_config = re.sub(r'^locale/translations=.*$', 'locale/translations=PackedStringArray()',
                                   original_config.decode(), flags=re.MULTILINE)
         project_file.write_text(temporary_config)
-        checked([godot, "--headless", "--path", str(project), "--import"], project,
-                diagnostics / "bootstrap.private.log")
-        project_file.write_bytes(original_config)
+        try:
+            checked([godot, "--headless", "--path", str(project), "--import"], project,
+                    diagnostics / "bootstrap.private.log", env=environment)
+            checked([godot, "--headless", "--path", str(project), "--script", str(ROOT / "web/prepare_fonts.gd")],
+                    project, diagnostics / "fonts.private.log", env=environment)
+            shutil.copyfile(ROOT / "web/theme.tres", project / "web-fonts/theme.tres")
+        finally:
+            project_file.write_bytes(web_config)
         # Source tests and logs stay on the runner; only the runtime export is published.
         checked(["python3", "scripts/test.py", "--godot", godot,
-                 "--artifacts", str(diagnostics / "tests")], project, diagnostics / "tests.private.log", 900)
+                 "--artifacts", str(diagnostics / "tests")], project, diagnostics / "tests.private.log", 900,
+                env=environment)
         report = json.loads((diagnostics / "tests/report.json").read_text())
         if report["status"] != "passed":
             raise RuntimeError("Source regression suite did not complete")
         print("Source regression suite and startup check passed")
-        if b"[gui]" in original_config:
-            raise RuntimeError("Source GUI settings changed; review web font overlay")
-        with project_file.open("a") as stream:
-            stream.write('\n[gui]\ntheme/custom_font="res://web-fonts/' + font_config["filename"] + '"\n')
         preset = (ROOT / "web/export_presets.cfg").read_text()
         preset = preset.replace('html/custom_html_shell=""',
                                 f'html/custom_html_shell="{ROOT / "web/shell.html"}"')
@@ -80,7 +98,8 @@ def build(source: Path, output: Path, godot: str, pipeline_sha: str, templates: 
                                     f'custom_template/release="{templates.resolve()}"')
         (project / "export_presets.cfg").write_text(preset)
         checked([godot, "--headless", "--path", str(project), "--export-release", "Web",
-                 str(output / "index.html")], project, diagnostics / "export.private.log", 300)
+                 str(output / "index.html")], project, diagnostics / "export.private.log", 300,
+                env=environment)
     for name in ["index.html", "index.js", "index.wasm", "index.pck"]:
         if not (output / name).is_file() or (output / name).stat().st_size == 0:
             raise RuntimeError("Required Web runtime file is missing")

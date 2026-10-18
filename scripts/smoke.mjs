@@ -44,7 +44,8 @@ const browser = await chromium.launch({ headless: true,
   args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 try {
   const pixelDensity = Number(option('--density') || 2);
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: pixelDensity, locale: 'ko-KR' });
+  const locale = option('--locale') || 'ko-KR';
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: pixelDensity, locale });
   const errors = [];
   page.on('pageerror', () => errors.push('JavaScript exception'));
   page.on('console', (message) => {
@@ -96,6 +97,7 @@ try {
   await page.waitForTimeout(800);
   const scoring = await canvas.screenshot();
   assert(!scoring.equals(after), 'Choosing a game must open scoring selection');
+  if (option('--screenshot')) await canvas.screenshot({ path: option('--screenshot').replace(/\.png$/, '-mode.png') });
   await click(195, 700);
   await page.waitForTimeout(2000);
   const game = await canvas.screenshot();
@@ -134,7 +136,7 @@ try {
   assert(beforeDraw.equals(undone), 'Undo must restore the exact rendered card board');
   if (option('--screenshot')) await page.screenshot({ path: option('--screenshot').replace(/\.png$/, '-game.png') });
   assert.equal(errors.length, 0, 'Runtime must start and respond without console/asset errors');
-  console.log(`Browser runtime passed: fixed 390x760 phone on desktop, portrait and landscape at ${pixelDensity}x pixel density; resize preserves state; scaled input, stock draw and undo; source ${deployment.source_sha}`);
+  console.log(`Browser runtime passed: fixed 390x760 phone on desktop, portrait and landscape at ${pixelDensity}x pixel density (${locale}); resize preserves state; scaled input, stock draw and undo; source ${deployment.source_sha}`);
 } finally {
   await browser.close();
   if (server) await new Promise((done) => server.close(done));

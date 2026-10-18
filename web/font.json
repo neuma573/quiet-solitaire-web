@@ -1,6 +1,14 @@
 {
-  "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/Korean/NotoSansCJKkr-Regular.otf",
-  "sha256": "6bcb2a0703aa137e874fc2dffa85f6c21ba9a67fa329e81b8c801663af7e992a",
-  "filename": "NotoSansCJKkr-Regular.otf",
-  "license": "SIL Open Font License 1.1"
+  "primary": {
+    "url": "https://raw.githubusercontent.com/googlefonts/Arimo/4a6255f269916ae7ad3fc2706b0935e7621396b8/fonts/ttf/Arimo-Regular.ttf",
+    "sha256": "41b22bc8f0b51f932825d37bc55b5eb6ba67dfe599a626e4aff2b43b624f9f8c",
+    "filename": "Arimo-Regular.ttf",
+    "license": "SIL Open Font License 1.1"
+  },
+  "fallback": {
+    "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/Korean/NotoSansCJKkr-Regular.otf",
+    "sha256": "6bcb2a0703aa137e874fc2dffa85f6c21ba9a67fa329e81b8c801663af7e992a",
+    "filename": "NotoSansCJKkr-Regular.otf",
+    "license": "SIL Open Font License 1.1"
+  }
 }
