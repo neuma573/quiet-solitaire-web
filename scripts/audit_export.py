@@ -3,6 +3,8 @@ from pathlib import Path
 import struct
 
 
+RUNTIME_JSON = {"assets/deals/draw-1-decks.json", "assets/deals/draw-3-decks.json"}
+
 def pack_paths(pack: Path) -> list[str]:
     data = pack.read_bytes()
     if data[:4] != b"GDPC" or struct.unpack_from("<I", data, 4)[0] != 4:
@@ -30,8 +32,12 @@ def audit(pack: Path) -> None:
     for name in names:
         parts = Path(name).parts
         if (not parts or ".." in parts or name.startswith("/") or parts[0] in forbidden_roots
+                or (Path(name).suffix.lower() == ".json" and name not in RUNTIME_JSON)
                 or Path(name).suffix in forbidden_suffixes or Path(name).name in {"token", ".env", "export_presets.cfg"}):
             raise ValueError("Private source or development data found in runtime pack; publish refused")
+    missing = RUNTIME_JSON - set(names)
+    if missing:
+        raise ValueError("Required runtime deal catalog missing: " + ", ".join(sorted(missing)))
     if "project.binary" not in names or not any(name.endswith(".gdc") for name in names):
         raise ValueError("Expected compiled game runtime is missing")
 
