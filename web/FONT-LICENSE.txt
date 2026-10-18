@@ -1,3 +1,11 @@
+Arimo-Regular.ttf
+Copyright 2026 The Arimo Project Authors (https://github.com/googlefonts/Arimo)
+Source: googlefonts/Arimo, commit 4a6255f269916ae7ad3fc2706b0935e7621396b8
+
+NotoSansCJKkr-Regular.otf
+Copyright © 2014-2021 Adobe (http://www.adobe.com/).
+Source: notofonts/noto-cjk, commit f8d157532fbfaeda587e826d4cd5b21a49186f7c
+
 This Font Software is licensed under the SIL Open Font License,
 Version 1.1.
 
