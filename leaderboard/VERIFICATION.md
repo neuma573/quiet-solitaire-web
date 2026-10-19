@@ -98,7 +98,7 @@ public browser connectivity remain untested because no external setup was
 authorized or performed. Gameplay claims remain client reported regardless of
 these infrastructure checks; plausible forged wins remain possible.
 
-## Godot Web verification and the remaining release blocker
+## Godot Web verification and local environment diagnosis
 
 Pinned official Godot 4.7.2 and its single-thread Web release template were
 downloaded into task-local tooling and verified against the repository's
@@ -106,31 +106,78 @@ checksums. The original checkout remained clean at
 `d856f79c8aa50ac95ddb6f4a8c0a4295570c6377`. The existing dispatch Worker and
 deployment workflow were unchanged.
 
-**The canonical `scripts/build.py` run did not pass.** On Windows, the original
-runner self-test requires a symlink privilege unavailable to this process. In
-the already-installed Ubuntu environment, runner self-tests passed, but the
-original `menus.test_victory_result_lifecycle` failed with two assertions and a
-`custom_step` call on Nil (`test/suites/menus.gd:51`). This repeated using both
-mounted-Windows and native Linux temporary source copies. The failure occurs
-before `apply_overlay`, so the leaderboard autoload has not been installed at
-that point. Original tests and game files were not changed or skipped in the
-canonical pipeline; its failure still prevents publication.
+**Latest result: the canonical `scripts/build.py` run passed**, including the
+original runner self-tests, all eight original suites (**227 cases, 111,320
+checks, zero failures**), source startup, web-adapter import/startup, Web
+release export, and PCK audit. No original source, assertion, case selection,
+timeout, FPS or simulation clock was changed. The successful export's pipeline
+metadata is `local-native-verification`.
 
-Passing original suites were rules, statistics and board in the canonical run;
-layout, navigation, platform and journey were subsequently run separately from
-an isolated diagnostic copy. Those seven complete suites contain 196 cases and
-103,451 checks. The menus suite remains failed; this is not a full source-suite
-pass or release-readiness claim.
+Initial failures were **local**, not a GitHub failure. The original Windows
+runner self-test could not create a symlink. Initial WSL runs then reached
+`menus.test_victory_result_lifecycle` but failed this assertion:
 
-To continue independent integration diagnosis, a **non-publishable diagnostic
-export** was created using existing font preparation, the reviewed web adapter,
-and official release template. That local helper and all private logs stayed
-outside the repository; no failure-bypass option was added to the build script.
-The artifact metadata marks its pipeline as `diagnostic-only`.
+```text
+reduced result continues fading instead of appearing instantly
+Invalid call. Nonexistent function 'custom_step' in base 'Nil'.
+at test_victory_result_lifecycle (res://test/suites/menus.gd:51)
+```
+
+This occurred before `apply_overlay`. The exact same source SHA and Godot
+version had already passed [GitHub run 39178261777](https://github.com/neuma573/quiet-solitaire-web/actions/runs/39178261777).
+The successful CI used Azure Ubuntu 24.04.5, kernel 6.17.0-1022-azure and native
+runner-temporary tool/data/log paths. Local WSL used Ubuntu 24.04.1, kernel
+6.18.33.2-microsoft-standard-WSL2. Both used the original `--headless` runner
+and the same font isolation. Exact CI locale/display variables were not logged.
+Initial local WSL had `LANG=C.UTF-8`, `DISPLAY=:0`, `WAYLAND_DISPLAY=wayland-0`,
+and mounted-Windows executable/user-data/log paths, even in the attempt that
+moved only the temporary project to native Linux `/tmp`.
+
+The test lets a 0.18-second fade advance over two engine frames **before**
+pausing it, then manually adds 0.06 + 0.06 seconds while asserting it is still
+in progress. Automatic pre-pause progress of approximately 0.06 seconds can
+therefore finish the fade early and clear the tween before the next call.
+Private, assertion-preserving instrumentation confirmed nonzero automatic
+progress (22.77/25.08 ms in a separate Windows probe). The initial WSL logs did
+not capture exact tween deltas. This establishes a timing-sensitive test;
+neither kernel version nor a particular filesystem operation alone is proven
+to be the cause.
+
+One bounded canonical run placed **all** executable, user-data, cache, temporary
+project, diagnostics and export paths on native Linux storage, with display
+variables unset, `CI=true`, `LANG=C.UTF-8`, and unchanged font isolation. It
+passed every original test and the entire build. This removes the local
+verification blocker and supports an environment/timing explanation rather
+than a new source regression. Fixed-FPS forcing was deliberately not used.
+No CI workflow change is needed: its existing paths are already native Linux.
+
+For WSL verification, keep the complete test environment native, not only the
+project. With the already checksum-verified matching tools, a reproducible
+command structure is:
+
+```sh
+task_root="$(mktemp -d /tmp/quiet-web-check.XXXXXX)"
+mkdir -p "$task_root/tmp" "$task_root/data" "$task_root/config" "$task_root/cache" "$task_root/tools"
+cp /path/to/pinned-linux-godot "$task_root/tools/godot"
+chmod +x "$task_root/tools/godot"
+cp /path/to/pinned-web_nothreads_release.zip "$task_root/tools/web_nothreads_release.zip"
+env -u DISPLAY -u WAYLAND_DISPLAY CI=true LANG=C.UTF-8 \
+  TMPDIR="$task_root/tmp" XDG_DATA_HOME="$task_root/data" \
+  XDG_CONFIG_HOME="$task_root/config" XDG_CACHE_HOME="$task_root/cache" \
+  python3 scripts/build.py --source /path/to/read-only-checkout \
+  --output "$task_root/site" --godot "$task_root/tools/godot" \
+  --template "$task_root/tools/web_nothreads_release.zip"
+```
+
+Earlier independent browser diagnosis used an explicitly non-publishable
+`diagnostic-only` export while the local gate was failing. The final checks
+below were repeated on the **successful canonical export**. All private logs
+and instrumented diagnostic copies stayed outside the repository; no bypass
+option was added to the build script.
 
 | Check | Actual outcome |
 | --- | --- |
-| Diagnostic Godot Web release export | Passed with current compiled adapter |
+| Canonical source tests and Godot Web release export | Passed with all 227 cases and current compiled adapter |
 | Existing PCK audit | Passed: 123 entries, compiled bridge present, zero raw `.gd`, exactly two runtime deal JSON files |
 | Existing browser smoke, density 1 | Passed: fixed viewport, resize, menu/game path, draw and undo; no runtime/asset errors |
 | Existing browser smoke, density 2 | Passed with the same assertions and no runtime/asset errors |
@@ -142,9 +189,9 @@ copy was placed next to temporary locked Playwright dependencies for module
 resolution), using only a temporary loopback server:
 
 ```powershell
-node scripts/smoke.mjs --directory <DIAGNOSTIC_EXPORT> --density 1
-node scripts/smoke.mjs --directory <DIAGNOSTIC_EXPORT> --density 2
-node tests/leaderboard-export-browser.mjs --directory <DIAGNOSTIC_EXPORT> --screenshots <TEMP_SCREENSHOTS>
+node scripts/smoke.mjs --directory <CANONICAL_EXPORT> --density 1
+node scripts/smoke.mjs --directory <CANONICAL_EXPORT> --density 2
+node tests/leaderboard-export-browser.mjs --directory <CANONICAL_EXPORT> --screenshots <TEMP_SCREENSHOTS>
 ```
 
 The native-integration test serves the actual exported files through HTTPS
@@ -162,8 +209,7 @@ overwriting the web nickname, and D1's quota-deletion pattern limit described
 above. It also pinned the actual XP formula/accounting source hashes. No new
 features or original-source edits were introduced.
 
-Release remains blocked on the original menus regression. Resolving that gate
-needs a separately scoped decision; this change does not waive it, publish a
-failed build, or modify the original repository. External resource creation,
-secret installation, custom-domain attachment and deployment also remain
-unapproved and unperformed.
+The local verification gate is now satisfied. The original test's timing
+sensitivity is documented; this work does not alter it or weaken release
+checks. External resource creation, secret installation, custom-domain
+attachment, publication and deployment remain unapproved and unperformed.

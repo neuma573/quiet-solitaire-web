@@ -113,9 +113,9 @@ GitHub API가 dispatch를 거부하면 Worker는 502를 반환합니다. GitHub 
 - 게임 연결은 검토한 원본 SHA와 소스 계약을 확인하고 실패 시 빌드를 중단합니다. 원본 SHA가 바뀌면
   `web/leaderboard-compatibility.json`과 어댑터를 다시 검토해야 합니다.
 
-실제 로컬 Workers/D1와 진단용 Web Export·PCK·1×/2× 실행 검사를 수행했습니다.
-정식 빌드는 어댑터 설치 전 원본 메뉴 테스트 실패로 중단되어 있습니다.
-통과·실패 범위와 재현 명령은 [검증 기록](leaderboard/VERIFICATION.md)에 구분해 기록했습니다.
+실제 로컬 Workers/D1와 전체 원본 테스트·Web Export·PCK·1×/2× 실행 검사를 통과했습니다.
+초기 WSL 메뉴 테스트 실패는 실행 파일·사용자 데이터·로그까지 Linux 네이티브 경로에 둔
+환경에서 원본 수정 없이 해소됐습니다. 환경 비교와 재현 명령은 [검증 기록](leaderboard/VERIFICATION.md)에 기록했습니다.
 
 추가 검증:
 
