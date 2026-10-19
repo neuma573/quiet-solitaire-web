@@ -120,6 +120,19 @@ try {
       width: 286 * box.width / 390, height: 30 * box.height / 760,
     } });
   }
+  async function nativeCrop(label, x, y, width, height) {
+    await frames();
+    const box = await canvas.boundingBox();
+    return page.screenshot({ path: join(screenshotDirectory, label + '.png'), clip: {
+      x: box.x + x * box.width / 390, y: box.y + y * box.height / 760,
+      width: width * box.width / 390, height: height * box.height / 760,
+    } });
+  }
+  async function settleControls() {
+    await page.mouse.move(385, 745);
+    await page.waitForTimeout(300); // Source selection tween is 0.18 seconds.
+    await frames();
+  }
   // Use actual canvas pointer input and the compiled web-owned autoload, not a JS-generated My Page event.
   await click(102, 704);
   await page.waitForTimeout(350); await frames();
@@ -142,9 +155,33 @@ try {
   const renamedCrop = await nameCrop('03-native-renamed');
   await page.screenshot({ path: join(screenshotDirectory, '03-native-renamed-full.png') });
   assert.ok(!fallback.equals(renamedCrop), 'Native profile pixels must change after browser nickname update');
-  for (const [label, x, y] of [['04-vegas', 282, 395], ['05-standard', 108, 395], ['06-draw3', 282, 467], ['07-draw1', 108, 467]]) {
-    await click(x, y);
-    assert.ok(renamedCrop.equals(await nameCrop(label)), `Native nickname must survive ${label} statistics refresh`);
+  // Coordinates verified against this reviewed 390x760 source export. Assert
+  // the controls really change, so stale coordinates cannot silently pass a
+  // nickname-only test. Crop inside the selected pill to exclude hover/focus borders.
+  for (const [field, y] of [['draw', 489], ['scoring', 561]]) {
+    await settleControls();
+    const selected = await nativeCrop(`${field}-initial`, 36, y - 14, 12, 12);
+    await click(282, y); await settleControls();
+    const deselected = await nativeCrop(`${field}-second`, 36, y - 14, 12, 12);
+    assert.ok(!selected.equals(deselected), `${field} must switch to its second option`);
+    assert.ok(renamedCrop.equals(await nameCrop(`${field}-second-name`)), `Native nickname must survive ${field} refresh`);
+    await click(108, y); await settleControls();
+    assert.ok(selected.equals(await nativeCrop(`${field}-restored`, 36, y - 14, 12, 12)), `${field} must return to its first option`);
+    assert.ok(renamedCrop.equals(await nameCrop(`${field}-first-name`)), `Native nickname must survive ${field} reset`);
+  }
+  const allDifficulties = await nativeCrop('difficulty-initial', 28, 405, 260, 32);
+  let previousDifficulty = allDifficulties;
+  for (const index of [1, 2, 3, 4, 0]) {
+    await click(195, 421);
+    await page.keyboard.press('Home');
+    for (let step = 0; step < index; step++) await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await settleControls();
+    const current = await nativeCrop(`difficulty-${index}`, 28, 405, 260, 32);
+    assert.ok(!previousDifficulty.equals(current), `Difficulty option ${index} must change the displayed selection`);
+    if (index === 0) assert.ok(allDifficulties.equals(current), 'Difficulty selection must return to All');
+    previousDifficulty = current;
+    assert.ok(renamedCrop.equals(await nameCrop(`difficulty-${index}-name`)), `Native nickname must survive difficulty option ${index}`);
   }
   // Navigate away and back using actual native controls to exercise a fresh My Page instance.
   await click(47, 24); await page.waitForTimeout(350);
@@ -165,7 +202,7 @@ try {
   assert.deepEqual(await readFile(join(directory, 'leaderboard-config.json')), configBefore, 'Exported disabled config must remain unchanged');
   assert.deepEqual(failures, []);
   await writeFile(join(screenshotDirectory, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2));
-  console.log('Compiled Godot Web profile passed: native My Page button opens HTML dialog; real guest API rename preserves ID/XP; native nickname survives score/draw refresh and page recreation; deletion restores native fallback. No synthetic game result or gameplay proof.');
+  console.log('Compiled Godot Web profile passed: native My Page button opens HTML dialog; real guest API rename preserves ID/XP; verified draw/scoring selection and all five difficulty filters preserve native nickname; page recreation and guest deletion preserve/restore identity. No synthetic game result or gameplay proof.');
   console.log(`Fixture exclusions: ${ignoredWorkletErrors.length} exact AudioWorklet Network errors. Audio transport is not covered by this intercepted test; every other runtime error fails.`);
   console.log('Screenshots: ' + screenshotDirectory);
 } catch (error) {

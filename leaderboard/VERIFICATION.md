@@ -227,3 +227,52 @@ through the real client and API handler with SQLite. Each variant covers
 session creation, profile lookup, rename, run creation, result/retry, board and
 deletion. This routing-only follow-up does not change Godot integration or the
 previously verified export. No deployment or infrastructure mutation was made.
+
+## Post-merge review and source compatibility
+
+PR #8's ready-triggered review identified an existing-session renewal path that
+updated D1 on every request without consuming the IP mutation quota. A local
+reproduction accepted 121 renewals and performed 121 session updates while
+recording only the initial guest-creation quota. Renewal now consumes the same
+120/hour network write budget as other authenticated mutations before updating
+the expiry. The guest ID, nickname, XP, bearer and CSRF token are retained.
+
+The new regression cases check shared quota consumption with run creation and
+nickname edits, expiry/cookie preservation on rejection, continued read access,
+next-window recovery, missing network identity and 130 concurrent renewals.
+Exactly 120 concurrent requests succeed and 10 are throttled. All **47 Node
+tests** pass locally, as does the pinned Godot bridge lifecycle test extended
+with a difficulty-filter nickname-refresh case.
+
+The failed post-merge deployment used source main
+`52d0f6b79381fd48df6a12a484d49c226a238121`, while the manifest still pinned its
+parent `d856f79c8aa50ac95ddb6f4a8c0a4295570c6377`. The source regression suite
+passed, then the deliberate revision guard stopped the build before export or
+publication. The guard and its tests remain unchanged.
+
+The compatibility review covers the changed main/board presentation code, new
+My Page difficulty filtering and statistics schema v3. The game observation
+signal, attempt lifecycle, game snapshot and XP formula remain compatible.
+The native statistics page is iOS-only; Web retains its Control-based page.
+Four normalized source digests and the pinned revision were updated; the three
+unchanged contract digests remain identical. The source repository was not
+modified.
+
+The current cloud sandbox places `.git` protection mounts in writable temporary
+ancestors, so its local overlay fixtures cannot satisfy the existing
+outside-checkout guard. Full Python, source regression, guarded export, PCK
+audit and compiled browser checks run in the validation-only GitHub Actions
+lane on `ci/**` branches. This lane uses the existing read-only source key only
+during checkout, removes it before source execution, has no Pages/OIDC write
+permissions, and never publishes or deploys. Its short-lived artifact includes
+only the audited public runtime and browser PNG evidence, not source or logs.
+
+[Validation run 39339369807](https://github.com/neuma573/quiet-solitaire-web/actions/runs/39339369807)
+passed that full sequence at `7827a8e4b372fdffe4ab62aebca215b8a3e8b29b`.
+Its exported metadata confirms source `52d0f6b79381fd48df6a12a484d49c226a238121`.
+The compiled My Page screenshots were inspected to locate the new difficulty,
+draw and scoring controls. The browser fixture now also requires visible
+selection changes and return-to-original pixels, exercising all five
+difficulty options; a preserved nickname alone cannot let stale click
+coordinates pass. Local Chromium startup is sandbox-blocked, so those final
+interaction assertions run in the same GitHub validation lane.
