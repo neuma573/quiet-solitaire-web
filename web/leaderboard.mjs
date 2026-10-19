@@ -9,7 +9,7 @@ export function normalizeApiBase(value, location = globalThis.location) {
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
   if (url.protocol !== 'https:' && !(local && url.protocol === 'http:')) throw new Error('HTTPS API required');
   if (url.username || url.password || url.search || url.hash) throw new Error('Invalid API URL');
-  return url.href.replace(/\/$/, '');
+  return url.href.replace(/\/+$/, '');
 }
 
 export function normalizeNickname(value) {

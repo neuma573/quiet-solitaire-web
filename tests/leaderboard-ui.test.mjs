@@ -25,6 +25,8 @@ function fixture(overrides = {}) {
 test('public API configuration is disabled by default and allows only HTTPS or local development', () => {
   assert.equal(normalizeApiBase(''), '');
   assert.equal(normalizeApiBase('/api/leaderboard/', { href: 'https://game.example/index.html' }), 'https://game.example/api/leaderboard');
+  assert.equal(normalizeApiBase('/api/leaderboard///', { href: 'https://game.example/index.html' }), 'https://game.example/api/leaderboard');
+  assert.equal(normalizeApiBase('https://game.example///'), 'https://game.example');
   assert.equal(normalizeApiBase('http://localhost:8787'), 'http://localhost:8787');
   for (const value of ['http://api.example', 'javascript:alert(1)', 'https://user:pass@api.example', 'https://api.example?token=secret']) {
     assert.throws(() => normalizeApiBase(value));

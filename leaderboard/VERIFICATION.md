@@ -213,3 +213,17 @@ The local verification gate is now satisfied. The original test's timing
 sensitivity is documented; this work does not alter it or weaken release
 checks. External resource creation, secret installation, custom-domain
 attachment, publication and deployment remain unapproved and unperformed.
+
+## PR review follow-up: API path configuration
+
+The Codex review identified a trailing-slash mismatch between `API_PREFIX` and
+the frontend API base. Regression tests first reproduced failures with `/`,
+`///`, `/api/leaderboard/`, and `/api/leaderboard///`. Both consumers now remove
+all trailing slashes; slash-only settings mean the root. Malformed prefixes
+still fail closed with `503`, and neighboring path segments remain `404`.
+
+`node --test tests/*.test.mjs`: **45 passed**, including seven prefix variants
+through the real client and API handler with SQLite. Each variant covers
+session creation, profile lookup, rename, run creation, result/retry, board and
+deletion. This routing-only follow-up does not change Godot integration or the
+previously verified export. No deployment or infrastructure mutation was made.

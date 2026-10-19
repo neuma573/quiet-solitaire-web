@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import worker, { handle, calculateXp, normalizeNickname, cleanup } from '../leaderboard/index.mjs';
+import { createLeaderboardClient } from '../web/leaderboard.mjs';
 
 function database() {
   const sqlite = new DatabaseSync(':memory:');
@@ -51,6 +52,53 @@ function fixture() {
 }
 const mode = { difficulty: 'normal', draw: 1, scoring: 'standard' };
 const outcome = { score: 450, elapsedMs: 60000, moves: 90, won: true };
+
+test('API prefix trailing slashes and root settings agree with every client endpoint', async t => {
+  for (const prefix of [undefined, '', '/', '///', '/api/leaderboard', '/api/leaderboard/', '/api/leaderboard///']) {
+    await t.test(`API_PREFIX=${JSON.stringify(prefix)}`, async t => {
+      const f = fixture();
+      t.after(() => f.DB.sqlite.close());
+      f.env.API_PREFIX = prefix;
+      let cookie = '';
+      const client = createLeaderboardClient({ apiBase: 'https://api.example' + (prefix ?? ''),
+        fetchImpl: async (url, options) => {
+          const headers = new Headers(options.headers);
+          headers.set('Origin', f.env.ALLOWED_ORIGIN);
+          headers.set('CF-Connecting-IP', '192.0.2.1');
+          if (cookie) headers.set('Cookie', cookie);
+          const response = await handle(new Request(url, { ...options, headers }), f.env, () => 1800000060000);
+          if (response.headers.has('Set-Cookie')) cookie = response.headers.get('Set-Cookie').split(';')[0];
+          return response;
+        }
+      });
+      const joined = await client.session();
+      assert.equal((await client.me()).user.id, joined.user.id);
+      assert.equal((await client.rename('Updated Name')).user.id, joined.user.id);
+      const { run } = await client.startRun(mode);
+      const key = crypto.randomUUID();
+      const result = { ...outcome, elapsedMs: 1000 };
+      assert.equal((await client.finishRun(run.id, result, key)).user.xp, 208);
+      assert.equal((await client.finishRun(run.id, result, key)).replayed, true);
+      assert.deepEqual((await client.board()).entries, [{ rank: 1, nickname: 'Updated Name', xp: 208, isMe: true }]);
+      assert.equal(await client.remove(), null);
+      if (prefix?.replace(/\/+$/, '')) {
+        assert.equal((await f.call('/v1/leaderboard')).status, 404);
+        assert.equal((await f.call('/api/leaderboard-extra/v1/leaderboard')).status, 404);
+      }
+    });
+  }
+});
+
+test('malformed API prefixes fail configuration validation', async t => {
+  const f = fixture();
+  t.after(() => f.DB.sqlite.close());
+  for (const prefix of ['api/', '/api?x/', '/api#x', '/api/%2f', '/api /', 42, false, {}]) {
+    f.env.API_PREFIX = prefix;
+    const response = await f.call('/v1/leaderboard');
+    assert.equal(response.status, 503, JSON.stringify(prefix));
+    assert.deepEqual(await response.json(), { error: 'not_configured' });
+  }
+});
 
 test('upstream-compatible XP formula uses mode and score, with no direct client XP field', () => {
   assert.equal(calculateXp(mode, 450), 208);

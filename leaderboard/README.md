@@ -13,7 +13,9 @@ XP imports are supported. Guests with zero XP are omitted until their first win.
 
 ## API contract
 
-`API_PREFIX` is stripped before matching the following paths. Every response is
+`API_PREFIX` is stripped before matching the following paths. Trailing slashes
+are removed from both the prefix and frontend API base; `/` means the root.
+Every response is
 `Cache-Control: no-store`. JSON errors are `{ "error": "code" }`.
 
 | Method and path | Request | Response |

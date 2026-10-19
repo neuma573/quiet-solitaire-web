@@ -33,7 +33,9 @@ function config(env) {
     if ((env.LOCAL_DEVELOPMENT === 'true' && !local) || (!local && u.protocol !== 'https:') || u.origin !== env.ALLOWED_ORIGIN) throw new Error();
     origin = u.origin;
   } catch { fail(503, 'not_configured'); }
-  const prefix = env.API_PREFIX || '';
+  const configuredPrefix = env.API_PREFIX ?? '';
+  if (typeof configuredPrefix !== 'string') fail(503, 'not_configured');
+  const prefix = configuredPrefix.replace(/\/+$/, '');
   if (prefix && !/^\/[a-zA-Z0-9/_-]+$/.test(prefix)) fail(503, 'not_configured');
   return { origin, prefix };
 }
