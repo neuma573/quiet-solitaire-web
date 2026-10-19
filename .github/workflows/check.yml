@@ -19,5 +19,5 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
-      - name: Test webhook authentication and merge filtering
-        run: node --test tests/worker.test.mjs
+      - name: Test webhook and isolated leaderboard
+        run: node --test tests/*.test.mjs

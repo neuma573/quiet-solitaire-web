@@ -36,7 +36,8 @@ class WebBuildTests(unittest.TestCase):
         web = self.pipeline / "web"
         web.mkdir(parents=True)
         (self.pipeline / "godot-version.json").write_text('{"version":"4.7.2"}')
-        for name in ("theme.tres", "export_presets.cfg", "FONT-LICENSE.txt"):
+        for name in ("theme.tres", "export_presets.cfg", "FONT-LICENSE.txt", "leaderboard.mjs",
+                     "leaderboard.css", "leaderboard-config.json"):
             (web / name).write_bytes((ROOT / "web" / name).read_bytes())
         manifest = json.loads((ROOT / "web/font.json").read_text())
         self.downloads = {}
@@ -50,7 +51,7 @@ class WebBuildTests(unittest.TestCase):
         self.copies = []
 
     def snapshot(self):
-        return {str(p.relative_to(self.source)): p.read_bytes() for p in self.source.rglob("*") if p.is_file()}
+        return {p.relative_to(self.source).as_posix(): p.read_bytes() for p in self.source.rglob("*") if p.is_file()}
 
     def download(self, url, **_options):
         return io.BytesIO(self.downloads[url])
@@ -81,23 +82,29 @@ class WebBuildTests(unittest.TestCase):
             for name in ("index.html", "index.js", "index.wasm", "index.pck"):
                 (self.output / name).write_bytes(b"runtime fixture")
 
-    def run_build(self, checked=None):
+    def run_build(self, checked=None, overlay_error=None):
         with patch.object(build, "ROOT", self.pipeline), \
                 patch.object(build.urllib.request, "urlopen", side_effect=self.download), \
                 patch.object(build.subprocess, "check_output", side_effect=["4.7.2.stable.official.test", "a" * 40]), \
+                patch.object(build, "apply_overlay", side_effect=overlay_error) as overlay, \
                 patch.object(build, "checked", side_effect=checked or self.checked), \
                 patch.object(build, "audit") as audit:
             build.build(self.source, self.output, "godot", "b" * 40, None)
+            overlay.assert_called_once_with(self.copies[-1], source_sha="a" * 40)
         return audit
 
     def test_tested_fonts_match_export_and_source_checkout_is_preserved(self):
         inherited_fontconfig = os.environ.get("FONTCONFIG_FILE")
         audit = self.run_build()
-        self.assertEqual(self.stages, ["bootstrap.private.log", "fonts.private.log", "tests.private.log", "export.private.log"])
+        self.assertEqual(self.stages, ["bootstrap.private.log", "fonts.private.log", "tests.private.log",
+                                     "leaderboard-import.private.log", "leaderboard-startup.private.log", "export.private.log"])
         self.assertEqual(self.snapshot(), self.before)
         self.assertEqual(os.environ.get("FONTCONFIG_FILE"), inherited_fontconfig)
         self.assertTrue(all(not p.exists() for p in self.copies), "only the disposable copy is modified")
         self.assertEqual((self.output / "FONT-LICENSE.txt").read_bytes(), (ROOT / "web/FONT-LICENSE.txt").read_bytes())
+        for name in ("leaderboard.mjs", "leaderboard.css", "leaderboard-config.json"):
+            self.assertEqual((self.output / name).read_bytes(), (ROOT / "web" / name).read_bytes())
+        self.assertFalse((self.output / "leaderboard-compatibility.json").exists())
         audit.assert_called_once_with(self.output / "index.pck")
 
     def test_regression_failure_prevents_export_and_keeps_source_intact(self):
@@ -118,3 +125,10 @@ class WebBuildTests(unittest.TestCase):
             self.run_build()
         self.assertEqual(self.stages, [])
         self.assertEqual(self.snapshot(), self.before)
+
+    def test_unreviewed_source_hooks_prevent_export(self):
+        with self.assertRaisesRegex(RuntimeError, "leaderboard review required"):
+            self.run_build(overlay_error=RuntimeError("leaderboard review required"))
+        self.assertEqual(self.stages, ["bootstrap.private.log", "fonts.private.log", "tests.private.log"])
+        self.assertEqual(self.snapshot(), self.before)
+        self.assertFalse(any(self.output.iterdir()))

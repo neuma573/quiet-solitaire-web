@@ -92,7 +92,42 @@ GitHub API가 dispatch를 거부하면 Worker는 502를 반환합니다. GitHub 
 - PWA·오프라인 캐시는 추가하지 않습니다. 원본과 동일하게 진행 중인 게임 재개 저장은 없으며 설정·통계 보존은 브라우저 IndexedDB 정책의 영향을 받습니다.
 - Chromium에서 실제 실행을 확인합니다. iPhone Safari의 성능·터치·안전 영역, VoiceOver는 별도 실기기 검증 대상입니다.
 
-## 로컬 검증
+## 웹 리더보드 (로컬 구현, 서버 연결 전)
+
+리더보드는 **누적 XP 내림차순**이며 순위·닉네임·XP만 표시합니다. 서버가 랜덤 닉네임과
+별도 고유 ID를 발급하므로 닉네임을 바꿔도 ID와 XP는 유지됩니다. 사용자가 참여한 뒤 새로
+시작한 게임의 승리 XP만 서버에서 지급량을 계산해 누적하며, 기존 로컬 통계는 업로드하지 않습니다.
+
+- `web/leaderboard_bridge.gd`는 웹 빌드의 임시 복사본에만 추가하는 관찰용 autoload입니다.
+  원본 게임 코드와 커밋은 변경하지 않습니다. 기존 마이페이지의 웹 전용 버튼으로 리더보드를 열고 닉네임을 수정합니다.
+  게임의 시간·이동 수 표시를 가리지 않도록 게임 shell에서는 별도의 떠 있는 실행 버튼을 숨깁니다.
+- `leaderboard/`는 별도의 게임 API와 D1 스키마입니다. `worker/`와 루트 `wrangler.jsonc`의
+  기존 GitHub 웹훅, 토큰, 배포 책임은 공유하지 않습니다.
+- 기본 `web/leaderboard-config.json`의 `apiBase`는 비어 있어 공유 기능이 꺼져 있습니다.
+  필요한 서버·DB·도메인·비밀값과 연결 절차는 [리더보드 설정 문서](leaderboard/README.md)를 참조하세요.
+  이 구현은 외부 리소스를 만들거나 배포하지 않습니다.
+- 게스트는 HttpOnly 쿠키로 인증합니다. 닉네임이나 클라이언트가 보낸 ID로 쓰기를 인증하지 않습니다.
+  쿠키 삭제·브라우저 변경·다른 기기에서는 기존 ID와 XP를 복구할 수 없으며 로그인 기능은 없습니다.
+- 서버의 지급량 계산·중복 지급 방지·기본 요청 제한은 포함하지만, 브라우저의 승리 보고 자체를
+  증명하지는 않습니다. 결과는 클라이언트 신고 기록입니다. 상금이나 경쟁 대회의 검증 수단으로 사용할 수 없습니다.
+- 게임 연결은 검토한 원본 SHA와 소스 계약을 확인하고 실패 시 빌드를 중단합니다. 원본 SHA가 바뀌면
+  `web/leaderboard-compatibility.json`과 어댑터를 다시 검토해야 합니다.
+
+추가 검증:
+
+```sh
+node --test tests/*.test.mjs
+python3 -m unittest discover -s tests -v
+# Playwright 설치 후 선택적으로 실행 (모든 HTTPS 요청을 로컬에서 가로채며 외부 통신 없음)
+node tests/leaderboard-ui-browser.mjs
+node tests/leaderboard-api-browser.mjs
+```
+
+`GODOT_BIN`을 설정하면 Python 검증에 실제 Godot 어댑터 수명주기 검사도 포함됩니다.
+브라우저 검사는 `CHROME_BIN`으로 설치된 Chromium 계열 브라우저를 지정할 수 있습니다.
+API 브라우저 검사는 실제 핸들러와 SQLite를 사용하지만 Cloudflare 런타임·배포 검사를 대신하지는 않습니다.
+
+## 로컬 빌드 검증
 
 ```sh
 python3 -m unittest discover -s tests -v

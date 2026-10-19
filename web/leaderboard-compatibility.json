@@ -1,0 +1,11 @@
+{
+  "source_sha": "d856f79c8aa50ac95ddb6f4a8c0a4295570c6377",
+  "description": "Reviewed web-only observation contract. Re-review hooks and XP rules before updating these normalized UTF-8 SHA-256 digests.",
+  "files": {
+    "scripts/main.gd": "ad4eb909c11ced4f0005f9a172e8e5d7cda9125879f01b05e71b551fd31e5f34",
+    "scripts/board.gd": "43f3a26505e29760ed947df32f48d4532bd7c8b06454b262ffdde8961c3ea73f",
+    "scripts/statistics_page.gd": "6d58e36a463e700ff162db51b6623c7d2ed7422b7cb9b111d5f7342809eef155",
+    "scripts/profile_header.gd": "12864a15034694e1e52a3ce7132bf2836dc8ba7ee85018053b93d720d5c3580b",
+    "scripts/klondike.gd": "4d89e9f1a14ceb8b7f7de5ee35e7313ddfba937769374791fefe901019bf3cda"
+  }
+}

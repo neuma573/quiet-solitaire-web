@@ -11,6 +11,7 @@ import tempfile
 import urllib.request
 from xml.sax.saxutils import escape
 from audit_export import audit
+from leaderboard_overlay import apply_overlay
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -90,6 +91,13 @@ def build(source: Path, output: Path, godot: str, pipeline_sha: str, templates: 
         if report["status"] != "passed":
             raise RuntimeError("Source regression suite did not complete")
         print("Source regression suite and startup check passed")
+        # Observe results and My Page using a web-owned autoload only in this
+        # disposable copy. Reimport and boot the exact project being exported.
+        apply_overlay(project, source_sha=sha)
+        checked([godot, "--headless", "--path", str(project), "--import"], project,
+                diagnostics / "leaderboard-import.private.log", env=environment)
+        checked([godot, "--headless", "--path", str(project), "--quit-after", "120"], project,
+                diagnostics / "leaderboard-startup.private.log", env=environment)
         preset = (ROOT / "web/export_presets.cfg").read_text()
         preset = preset.replace('html/custom_html_shell=""',
                                 f'html/custom_html_shell="{ROOT / "web/shell.html"}"')
@@ -109,6 +117,13 @@ def build(source: Path, output: Path, godot: str, pipeline_sha: str, templates: 
     if any(p.is_symlink() or not p.is_file() or p.name not in allowed for p in output.iterdir()):
         raise RuntimeError("Unexpected file in public export; upload refused")
     audit(output / "index.pck")
+    # Fixed public web assets only. Never publish the source compatibility
+    # manifest, backend, credentials, diagnostics, or private source checkout.
+    for name in ("leaderboard.mjs", "leaderboard.css", "leaderboard-config.json"):
+        asset = ROOT / "web" / name
+        if asset.is_symlink() or not asset.is_file():
+            raise RuntimeError("Required public leaderboard asset is missing or unsafe")
+        shutil.copyfile(asset, output / name)
     (output / ".nojekyll").touch()
     shutil.copyfile(ROOT / "web/FONT-LICENSE.txt", output / "FONT-LICENSE.txt")
     (output / "404.html").write_text('<!doctype html><html lang="en"><meta charset="utf-8"><title>Not found</title><p>Not found.</p></html>\n')
