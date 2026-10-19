@@ -140,6 +140,7 @@ try {
   await page.getByRole('button', { name: '닫기', exact: true }).click();
   await page.locator('.ql-dialog').waitFor({ state: 'hidden' });
   const renamedCrop = await nameCrop('03-native-renamed');
+  await page.screenshot({ path: join(screenshotDirectory, '03-native-renamed-full.png') });
   assert.ok(!fallback.equals(renamedCrop), 'Native profile pixels must change after browser nickname update');
   for (const [label, x, y] of [['04-vegas', 282, 395], ['05-standard', 108, 395], ['06-draw3', 282, 467], ['07-draw1', 108, 467]]) {
     await click(x, y);

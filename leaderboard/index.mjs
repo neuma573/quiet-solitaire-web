@@ -155,6 +155,9 @@ export async function handle(request, env, clock = Date.now) {
       const data = await body(request); keys(data, []);
       const existing = await session(request, env.DB, now, false);
       if (existing) {
+        // Renewal mutates session expiry and shares the same per-IP budget as
+        // other authenticated writes; a valid bearer must not bypass it.
+        await networkLimit(request, env, now, 'write', 120);
         // Explicitly returning to the feature renews this same identity and bearer.
         // No new account or XP history is created by renewal.
         await env.DB.prepare('UPDATE sessions SET expires_at = ? WHERE token_hash = ?').bind(now + SESSION_MS, existing.token_hash).run();

@@ -116,7 +116,7 @@ concerns and must be reviewed before release. Cookie/CSRF/request bodies must
 never be added to logs. Observability is disabled in both supplied configs.
 
 Atomic fixed-window quotas currently allow 10 new guests/IP/hour, 120
-mutations/IP/hour, 60 run starts/guest/hour, 60 result submissions/guest/hour,
+mutations/IP/hour (including existing-session renewal), 60 run starts/guest/hour, 60 result submissions/guest/hour,
 five nickname edits/guest/hour, and 240 board reads/IP/minute. Identical result
 retries do not consume write quota. Shared networks may share an IP quota;
 changing network or clearing cookies does not become Sybil protection.
