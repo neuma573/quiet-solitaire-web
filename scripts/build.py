@@ -7,10 +7,12 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import urllib.request
 from xml.sax.saxutils import escape
 from audit_export import audit
+from leaderboard_overlay import apply_overlay
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -83,19 +85,26 @@ def build(source: Path, output: Path, godot: str, pipeline_sha: str, templates: 
         finally:
             project_file.write_bytes(web_config)
         # Source tests and logs stay on the runner; only the runtime export is published.
-        checked(["python3", "scripts/test.py", "--godot", godot,
+        checked([sys.executable, "scripts/test.py", "--godot", godot,
                  "--artifacts", str(diagnostics / "tests")], project, diagnostics / "tests.private.log", 900,
                 env=environment)
         report = json.loads((diagnostics / "tests/report.json").read_text())
         if report["status"] != "passed":
             raise RuntimeError("Source regression suite did not complete")
         print("Source regression suite and startup check passed")
+        # Observe results and My Page using a web-owned autoload only in this
+        # disposable copy. Reimport and boot the exact project being exported.
+        apply_overlay(project, source_sha=sha)
+        checked([godot, "--headless", "--path", str(project), "--import"], project,
+                diagnostics / "leaderboard-import.private.log", env=environment)
+        checked([godot, "--headless", "--path", str(project), "--quit-after", "120"], project,
+                diagnostics / "leaderboard-startup.private.log", env=environment)
         preset = (ROOT / "web/export_presets.cfg").read_text()
         preset = preset.replace('html/custom_html_shell=""',
-                                f'html/custom_html_shell="{ROOT / "web/shell.html"}"')
+                                f'html/custom_html_shell="{(ROOT / "web/shell.html").as_posix()}"')
         if templates:
             preset = preset.replace('custom_template/release=""',
-                                    f'custom_template/release="{templates.resolve()}"')
+                                    f'custom_template/release="{templates.resolve().as_posix()}"')
         (project / "export_presets.cfg").write_text(preset)
         checked([godot, "--headless", "--path", str(project), "--export-release", "Web",
                  str(output / "index.html")], project, diagnostics / "export.private.log", 300,
@@ -109,6 +118,13 @@ def build(source: Path, output: Path, godot: str, pipeline_sha: str, templates: 
     if any(p.is_symlink() or not p.is_file() or p.name not in allowed for p in output.iterdir()):
         raise RuntimeError("Unexpected file in public export; upload refused")
     audit(output / "index.pck")
+    # Fixed public web assets only. Never publish the source compatibility
+    # manifest, backend, credentials, diagnostics, or private source checkout.
+    for name in ("leaderboard.mjs", "leaderboard.css", "leaderboard-config.json"):
+        asset = ROOT / "web" / name
+        if asset.is_symlink() or not asset.is_file():
+            raise RuntimeError("Required public leaderboard asset is missing or unsafe")
+        shutil.copyfile(asset, output / name)
     (output / ".nojekyll").touch()
     shutil.copyfile(ROOT / "web/FONT-LICENSE.txt", output / "FONT-LICENSE.txt")
     (output / "404.html").write_text('<!doctype html><html lang="en"><meta charset="utf-8"><title>Not found</title><p>Not found.</p></html>\n')

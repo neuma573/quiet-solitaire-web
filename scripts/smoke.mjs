@@ -12,7 +12,8 @@ let address = option('--url');
 let server;
 const prefix = '/quiet-solitaire-web/';
 const mime = { '.wasm': 'application/wasm', '.pck': 'application/octet-stream',
-  '.html': 'text/html', '.js': 'application/javascript', '.png': 'image/png', '.json': 'application/json' };
+  '.html': 'text/html', '.js': 'application/javascript', '.mjs': 'application/javascript',
+  '.css': 'text/css', '.png': 'image/png', '.json': 'application/json' };
 if (directory) {
   const root = resolve(directory);
   server = createServer(async (req, res) => {
@@ -52,7 +53,7 @@ try {
     if (message.type() === 'error' || /SCRIPT ERROR:|\bERROR:/.test(message.text())) errors.push('Runtime error');
   });
   page.on('response', (response) => {
-    if (response.status() >= 400 && /\.(wasm|pck|js|png)(\?|$)/.test(response.url())) errors.push('Runtime asset error');
+    if (response.status() >= 400 && /\.(wasm|pck|m?js|css|png)(\?|$)/.test(response.url())) errors.push('Runtime asset error');
   });
   await page.goto(address, { waitUntil: 'load', timeout: 120_000 });
   await page.waitForFunction(() => {

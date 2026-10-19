@@ -1,0 +1,19 @@
+{
+  // Separate Worker and D1. This is an inert example; never use root wrangler.jsonc.
+  "name": "quiet-solitaire-leaderboard",
+  "main": "index.mjs",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "vars": {
+    "ALLOWED_ORIGIN": "https://example.invalid",
+    "API_PREFIX": "/api/leaderboard"
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "quiet-solitaire-leaderboard",
+    "database_id": "REPLACE_WITH_SEPARATELY_APPROVED_D1_ID",
+    "migrations_dir": "migrations"
+  }],
+  "triggers": { "crons": ["23 4 * * *"] },
+  "observability": { "enabled": false }
+}
