@@ -187,9 +187,14 @@ export async function handle(request, env, clock = Date.now) {
     } else if (path === '/v1/me' && request.method === 'DELETE') {
       const row = await session(request, env.DB, now); csrf(request, row);
       await networkLimit(request, env, now, 'write', 120);
+      const quotaPrefix = `user:${await hash(row.id)}`;
       await env.DB.batch([
         env.DB.prepare('DELETE FROM guests WHERE id = ?').bind(row.id),
-        env.DB.prepare('DELETE FROM rate_limits WHERE bucket LIKE ?').bind(`user:${await hash(row.id)}:%`)
+        // D1 limits LIKE/GLOB pattern length more strictly than stock SQLite.
+        // All user bucket keys start with this fixed hex digest and colon;
+        // the next ASCII delimiter is semicolon, so this indexed range covers
+        // exactly that guest's buckets without a long wildcard pattern.
+        env.DB.prepare('DELETE FROM rate_limits WHERE bucket >= ? AND bucket < ?').bind(`${quotaPrefix}:`, `${quotaPrefix};`)
       ]);
       response = new Response(null, { status: 204, headers: { 'Set-Cookie': cookie('', 0) } });
     } else if (path === '/v1/runs' && request.method === 'POST') {

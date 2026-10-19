@@ -26,7 +26,10 @@ class LeaderboardOverlayTests(unittest.TestCase):
         self.pipeline = self.root / "pipeline"
         (self.pipeline / "web").mkdir(parents=True)
         self.sha = "a" * 40
-        files = {"scripts/example.gd": "extends Node\n# Independently authored fixture.\n"}
+        files = {
+            "scripts/example.gd": "extends Node\n# Independently authored fixture.\n",
+            "scripts/player_level.gd": "extends RefCounted\nconst FIXTURE_REWARD: int = 100\n",
+        }
         for name, text in files.items():
             file = self.project / name
             file.parent.mkdir(parents=True, exist_ok=True)
@@ -75,6 +78,14 @@ class LeaderboardOverlayTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "revision has not been reviewed"):
             overlay.apply_overlay(self.project, source_sha="b" * 40)
         self.assertEqual(self.snapshot(), self.original)
+
+    def test_changed_xp_formula_refuses_even_with_reviewed_revision(self):
+        (self.project / "scripts/player_level.gd").write_text(
+            "extends RefCounted\nconst FIXTURE_REWARD: int = 1000\n", encoding="utf-8")
+        before = self.snapshot()
+        with self.assertRaisesRegex(RuntimeError, "Source hooks or XP rules changed"):
+            self.apply()
+        self.assertEqual(self.snapshot(), before)
 
     def test_git_checkout_or_descendant_cannot_be_mutated(self):
         (self.root / ".git").mkdir()
@@ -150,6 +161,9 @@ func _ready() -> void:
     add_child(board)
 ''',
             "scripts/profile_header.gd": '''extends Control
+class Service extends RefCounted:
+    signal changed
+var service: Service = Service.new()
 var player_name: Label
 var connection: Label
 func _ready() -> void:
@@ -157,24 +171,48 @@ func _ready() -> void:
     connection = Label.new()
     add_child(player_name)
     add_child(connection)
+    service.changed.connect(_refresh_identity)
+    _refresh_identity()
+func _refresh_identity() -> void:
+    player_name.text = "Player"
+    connection.text = "Unavailable"
 ''',
             "scripts/statistics_page.gd": '''extends Control
 var _content: VBoxContainer
 var profile: Control
 var transitioning: bool = false
 var busy: bool = false
+var score_buttons: Array[Button] = []
+var draw_buttons: Array[Button] = []
+var retry: Button
 func _ready() -> void:
     _content = VBoxContainer.new()
     add_child(_content)
     profile = load("res://scripts/profile_header.gd").new()
     _content.add_child(profile)
+    for buttons: Array[Button] in [score_buttons, draw_buttons]:
+        var button: Button = Button.new()
+        add_child(button)
+        buttons.append(button)
+        button.pressed.connect(refresh)
+    retry = Button.new()
+    add_child(retry)
+    retry.pressed.connect(refresh)
     hide()
+func refresh() -> void:
+    profile._refresh_identity()
+func apply_appearance() -> void:
+    theme = Theme.new()
+    profile._refresh_identity()
 ''',
             "test_bridge.gd": '''extends SceneTree
 class Observer extends "res://web-leaderboard/leaderboard_bridge.gd":
     var events: Array[Dictionary] = []
+    var identity: Variant = null
     func _emit(event: Dictionary) -> void:
         events.append(event.duplicate(true))
+    func _browser_profile() -> Variant:
+        return identity
 var failures: int = 0
 func _initialize() -> void:
     _run.call_deferred()
@@ -226,7 +264,38 @@ func _run() -> void:
     page.busy = true
     button.emit_signal("pressed")
     _check(observer.events.size() == 7, "My Page ignores actions during transitions or blocked input")
+    page.busy = false
+    observer.identity = {"nickname": "Guest Pine"}
+    page.show()
+    await process_frame
+    await process_frame
+    _check(page.profile.player_name.text == "Guest Pine", "Visible My Page displays the server nickname")
+    page.score_buttons[0].emit_signal("pressed")
+    await process_frame
+    _check(page.profile.player_name.text == "Guest Pine", "Scoring filter refresh preserves the server nickname")
+    page.draw_buttons[0].emit_signal("pressed")
+    await process_frame
+    _check(page.profile.player_name.text == "Guest Pine", "Draw filter refresh preserves the server nickname")
+    page.retry.emit_signal("pressed")
+    await process_frame
+    _check(page.profile.player_name.text == "Guest Pine", "Local statistics retry preserves the server nickname")
+    page.apply_appearance()
+    await process_frame
+    _check(page.profile.player_name.text == "Guest Pine", "Theme refresh preserves the server nickname")
+    page.profile.service.emit_signal("changed")
+    await process_frame
+    _check(page.profile.player_name.text == "Guest Pine", "Native profile service refresh preserves the server nickname")
+    page.refresh()
+    observer._notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
+    await process_frame
+    _check(page.profile.player_name.text == "Guest Pine", "App focus refresh preserves the server nickname")
+    observer.identity = null
+    observer._profile_changed([])
+    await process_frame
+    _check(page.profile.player_name.text == "Player" and page.profile.connection.text == "Unavailable", "Deleting the web guest restores local profile labels")
     page.queue_free()
+    await process_frame
+    _check(observer._pages.is_empty() and observer._queued_pages.is_empty(), "Freed My Pages leave no app-lifetime refresh observers")
     observer.queue_free()
     await process_frame
     print("Bridge lifecycle checks completed: failures=", failures)

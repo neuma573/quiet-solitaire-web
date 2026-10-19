@@ -6,6 +6,8 @@
     "scripts/board.gd": "43f3a26505e29760ed947df32f48d4532bd7c8b06454b262ffdde8961c3ea73f",
     "scripts/statistics_page.gd": "6d58e36a463e700ff162db51b6623c7d2ed7422b7cb9b111d5f7342809eef155",
     "scripts/profile_header.gd": "12864a15034694e1e52a3ce7132bf2836dc8ba7ee85018053b93d720d5c3580b",
-    "scripts/klondike.gd": "4d89e9f1a14ceb8b7f7de5ee35e7313ddfba937769374791fefe901019bf3cda"
+    "scripts/klondike.gd": "4d89e9f1a14ceb8b7f7de5ee35e7313ddfba937769374791fefe901019bf3cda",
+    "scripts/player_level.gd": "c55b2f70478488b8da5e4f94f1f76804156964f8e6158457ed87f3d380ea8c63",
+    "scripts/klondike_statistics.gd": "5ee75c0656a24f5da2e138caf6f1f27bd84c4a71e5d5d620975ef926eb4a509b"
   }
 }

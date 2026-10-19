@@ -113,6 +113,10 @@ GitHub API가 dispatch를 거부하면 Worker는 502를 반환합니다. GitHub 
 - 게임 연결은 검토한 원본 SHA와 소스 계약을 확인하고 실패 시 빌드를 중단합니다. 원본 SHA가 바뀌면
   `web/leaderboard-compatibility.json`과 어댑터를 다시 검토해야 합니다.
 
+실제 로컬 Workers/D1와 진단용 Web Export·PCK·1×/2× 실행 검사를 수행했습니다.
+정식 빌드는 어댑터 설치 전 원본 메뉴 테스트 실패로 중단되어 있습니다.
+통과·실패 범위와 재현 명령은 [검증 기록](leaderboard/VERIFICATION.md)에 구분해 기록했습니다.
+
 추가 검증:
 
 ```sh
@@ -121,6 +125,8 @@ python3 -m unittest discover -s tests -v
 # Playwright 설치 후 선택적으로 실행 (모든 HTTPS 요청을 로컬에서 가로채며 외부 통신 없음)
 node tests/leaderboard-ui-browser.mjs
 node tests/leaderboard-api-browser.mjs
+# 실제 Web Export의 마이페이지 연결 검사
+node tests/leaderboard-export-browser.mjs --directory /path/to/export
 ```
 
 `GODOT_BIN`을 설정하면 Python 검증에 실제 Godot 어댑터 수명주기 검사도 포함됩니다.

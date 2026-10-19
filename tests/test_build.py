@@ -74,7 +74,7 @@ class WebBuildTests(unittest.TestCase):
             self.assertTrue((project / "web-fonts/theme.tres").is_file())
             self.assertIn('locale/translations=PackedStringArray("res://messages.en.translation")', config)
         if log.name == "tests.private.log":
-            self.assertEqual(command[:2], ["python3", "scripts/test.py"])
+            self.assertEqual(command[:2], [sys.executable, "scripts/test.py"])
             report = Path(command[command.index("--artifacts") + 1]) / "report.json"
             report.parent.mkdir()
             report.write_text('{"status":"passed"}')

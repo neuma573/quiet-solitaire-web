@@ -10,6 +10,7 @@ const WEB_PROFILE_META: StringName = &"quiet_web_leaderboard_profile"
 var _window: JavaScriptObject
 var _profile_callback: JavaScriptObject
 var _pages: Array[WeakRef] = []
+var _queued_pages: Dictionary[int, WeakRef] = {}
 var _game_root: Node
 var _attempt_id: String = ""
 var _started: bool = false
@@ -111,7 +112,8 @@ func _attach_page(page: Control) -> void:
 		push_warning("Web leaderboard My Page hooks are unavailable")
 		return
 	page.set_meta(WEB_PROFILE_META, true)
-	_pages.append(weakref(page))
+	var reference: WeakRef = weakref(page)
+	_pages.append(reference)
 	var button: Button = Button.new()
 	button.name = "WebLeaderboardProfile"
 	button.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
@@ -123,21 +125,63 @@ func _attach_page(page: Control) -> void:
 			_emit({"type": "my-page"}))
 	content.add_child(button)
 	content.move_child(button, 1)
-	page.visibility_changed.connect(func() -> void: _refresh_page.call_deferred(weakref(page)))
+	var refresh: Callable = _queue_profile_refresh.bind(reference)
+	page.visibility_changed.connect(refresh)
+	page.theme_changed.connect(refresh)
+	page.item_rect_changed.connect(refresh)
+	profile.visibility_changed.connect(refresh)
+	var service: Object = profile.get("service") as Object
+	if service != null and service.has_signal("changed"):
+		service.connect("changed", refresh)
+	page.tree_exiting.connect(_detach_page.bind(reference, service, refresh))
+	for controls: Variant in [page.get("score_buttons"), page.get("draw_buttons"), [page.get("retry")]]:
+		if controls is Array:
+			for control: Variant in controls:
+				if control is Button:
+					control.pressed.connect(refresh)
+	# Source refreshes can reset identity without a page-level signal. Text changes
+	# always invalidate Label drawing, including different nicknames of equal width.
+	for label: Label in [profile.get("player_name"), profile.get("connection")]:
+		label.minimum_size_changed.connect(refresh)
+		label.draw.connect(refresh)
 	_refresh_page(weakref(page))
+
+func _detach_page(reference: WeakRef, service: Object, refresh: Callable) -> void:
+	var page: Control = reference.get_ref() as Control
+	if page != null:
+		_queued_pages.erase(page.get_instance_id())
+	_pages.erase(reference)
+	if is_instance_valid(service) and service.has_signal("changed") and service.is_connected("changed", refresh):
+		service.disconnect("changed", refresh)
 
 func _profile_changed(_arguments: Array) -> void:
 	for reference: WeakRef in _pages:
+		_queue_profile_refresh(reference)
+
+func _queue_profile_refresh(reference: WeakRef) -> void:
+	var page: Control = reference.get_ref() as Control
+	if page == null or not page.is_inside_tree():
+		return
+	if _queued_pages.is_empty():
+		_flush_profile_refreshes.call_deferred()
+	_queued_pages[page.get_instance_id()] = reference
+
+func _flush_profile_refreshes() -> void:
+	var pending: Array[WeakRef] = []
+	pending.assign(_queued_pages.values())
+	_queued_pages.clear()
+	for reference: WeakRef in pending:
 		_refresh_page(reference)
+
+func _browser_profile() -> Variant:
+	var raw: Variant = JavaScriptBridge.eval("JSON.stringify(window.QuietLeaderboardBridge && window.QuietLeaderboardBridge.profile ? window.QuietLeaderboardBridge.profile() : null)")
+	return JSON.parse_string(raw) if raw is String else null
 
 func _refresh_page(reference: WeakRef) -> void:
 	var page: Control = reference.get_ref() as Control
 	if page == null or not page.is_visible_in_tree():
 		return
-	var raw: Variant = JavaScriptBridge.eval("JSON.stringify(window.QuietLeaderboardBridge && window.QuietLeaderboardBridge.profile ? window.QuietLeaderboardBridge.profile() : null)")
-	if not raw is String:
-		return
-	var identity: Variant = JSON.parse_string(raw)
+	var identity: Variant = _browser_profile()
 	if not identity is Dictionary or not identity.get("nickname") is String or identity.nickname.is_empty() or identity.nickname.length() > 48:
 		var original_profile: Control = page.get("profile") as Control
 		if original_profile != null and original_profile.has_method("_refresh_identity"):
@@ -146,9 +190,11 @@ func _refresh_page(reference: WeakRef) -> void:
 	var profile: Control = page.get("profile") as Control
 	var label: Label = profile.get("player_name") as Label
 	label.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-	label.text = identity.nickname
+	if label.text != identity.nickname:
+		label.text = identity.nickname
 	var connection: Label = profile.get("connection") as Label
-	connection.text = _caption("guest")
+	if connection.text != _caption("guest"):
+		connection.text = _caption("guest")
 	var button: Button = page.get("_content").get_node_or_null("WebLeaderboardProfile") as Button
 	if button != null:
 		button.text = _caption("profile")
@@ -164,6 +210,11 @@ func _caption(key: String) -> String:
 func _emit(event: Dictionary) -> void:
 	var encoded: String = JSON.stringify(JSON.stringify(event))
 	JavaScriptBridge.eval("if (window.QuietLeaderboardBridge) window.QuietLeaderboardBridge.emit(" + encoded + ");")
+
+func _notification(what: int) -> void:
+	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_FOCUS_IN,
+			NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_APPLICATION_RESUMED]:
+		_profile_changed([])
 
 func _exit_tree() -> void:
 	if _window != null and _profile_callback != null:

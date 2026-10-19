@@ -152,7 +152,61 @@ same hostname (`localhost` on both) for cookies. LOCAL_DEVELOPMENT permits only
 localhost/127.0.0.1 HTTP origins and a shared test bucket when Cloudflare's IP
 header is absent. Production requires HTTPS and Cloudflare's trusted IP header.
 
+For actual workerd/D1 integration, use an isolated local database and start
+Wrangler with `--test-scheduled`; in another terminal run:
+
+```powershell
+node tests/leaderboard-runtime.mjs
+```
+
+This script refuses non-loopback targets. It creates two disposable guests,
+checks auth/CSRF, concurrent result retries, computed XP, shared ordering,
+nickname identity, deletion and the scheduled handler, then deletes its guests.
+Run it against fresh temporary `--persist-to` storage, not a personal local
+database. [VERIFICATION.md](VERIFICATION.md) records the tested runtime versions,
+commands, results and remaining deployment boundary.
+
 ## External setup required — not performed
+
+Concrete proposal for approval (names are planned, availability is not checked):
+
+| Resource or setting | Proposed production value |
+| --- | --- |
+| New gameplay Worker | `quiet-solitaire-leaderboard` |
+| New D1 database | `quiet-solitaire-leaderboard`, binding `DB` |
+| New custom domain / frontend `apiBase` | `https://solitaire-api.neuma573.com` |
+| `ALLOWED_ORIGIN` | `https://neuma573.com` (origin only, no project path) |
+| `API_PREFIX` | empty string for that dedicated API hostname |
+| `LOCAL_DEVELOPMENT` | absent in production |
+| Database ID and account/zone IDs | supplied only after the chosen resources are approved |
+| Cleanup | daily `23 4 * * *` UTC; observability disabled |
+| Runtime secret | `RATE_LIMIT_SALT`: a fresh random value with at least 32 bytes of entropy |
+
+The salt only HMACs daily network quota keys; it is not a GitHub credential,
+user ID, session bearer, or score-signing key. The runtime needs no Cloudflare
+API token: D1 is accessed through the `DB` binding. No secret value has been
+generated or stored as part of this proposal.
+
+For operator setup, scope access to the intended Cloudflare account and zone.
+Current [Workers roles](https://developers.cloudflare.com/workers/authorization/workers/)
+require Workers product-level **Admin** for initial creation; later deployment,
+secret and schedule changes need **Editor**, preferably scoped only to this
+Worker. Attaching or changing either a route or custom domain additionally
+needs **Zone > Workers Routes > Write** for the affected zone. Custom Domains
+currently have per-Worker-role limitations, so check the intended setup flow.
+Database creation and remote migrations need **Account > D1 > Edit** (called
+`D1 Write` in API endpoint permission lists). Legacy endpoint permissions such
+as `Workers Scripts Write` remain supported but are broader than a per-Worker
+Editor. Account/Zone read access is only needed for tooling that discovers IDs;
+use explicit known IDs where possible. Manual DNS edits, if separately needed,
+require only the selected zone's DNS write. These setup privileges are not
+needed by the gameplay runtime; deploying an existing DB binding alone needs
+no direct D1 permission. Do not reuse the dispatch token or request Global API
+Key access. Remove setup-only privileges from later deployment-only tokens
+where feasible.
+See the official [Worker upload permissions](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/methods/update/),
+[D1 creation permissions](https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/create/),
+and [custom-domain permissions](https://developers.cloudflare.com/api/resources/workers/subresources/domains/methods/update/).
 
 Before publishing, obtain approval for the following concrete choices/actions:
 
