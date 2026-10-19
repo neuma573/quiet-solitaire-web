@@ -173,9 +173,18 @@ try {
   let previousDifficulty = allDifficulties;
   for (const index of [1, 2, 3, 4, 0]) {
     await click(195, 421);
-    await page.keyboard.press('Home');
-    for (let step = 0; step < index; step++) await page.keyboard.press('ArrowDown');
-    await page.keyboard.press('Enter');
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: join(screenshotDirectory, `difficulty-${index}-popup.png`) });
+    // Godot consumes browser key events on its next engine frame. Let each
+    // navigation event reach the popup before activating its focused item.
+    async function popupKey(key) {
+      await page.keyboard.press(key, { delay: 60 });
+      await page.waitForTimeout(100);
+      await frames();
+    }
+    await popupKey('Home');
+    for (let step = 0; step < index; step++) await popupKey('ArrowDown');
+    await popupKey('Enter');
     await settleControls();
     const current = await nativeCrop(`difficulty-${index}`, 28, 405, 260, 32);
     assert.ok(!previousDifficulty.equals(current), `Difficulty option ${index} must change the displayed selection`);
