@@ -161,6 +161,89 @@ test('IP guest creation and identity nickname limits cannot be bypassed with cli
   assert.equal((await f.request('/v1/me', { method: 'PATCH', identity: guest, body: { nickname: 'Too Many', userId: crypto.randomUUID() } })).response.status, 400);
 });
 
+test('session renewal shares the IP write quota and rejection never extends the session', async t => {
+  const f = fixture(); t.after(() => f.sqlite.close());
+  const guest = await f.guest();
+  await f.start(guest); // One write in the shared IP bucket.
+  const rename = await f.request('/v1/me', { method: 'PATCH', identity: guest, body: { nickname: 'Renewed Guest' } });
+  assert.equal(rename.response.status, 200); // A second write in the same bucket.
+  const originalExpiry = f.sqlite.prepare('SELECT expires_at FROM sessions').get().expires_at;
+  f.advance(1000);
+  for (let i = 0; i < 118; i++) {
+    const renewal = await f.request('/v1/session', { method: 'POST', identity: guest, body: {} });
+    assert.equal(renewal.response.status, 200);
+    assert.deepEqual(renewal.data, { user: rename.data.user, csrfToken: guest.csrfToken });
+    assert.equal(renewal.response.headers.get('Set-Cookie').split(';')[0], guest.cookie);
+  }
+  const renewedExpiry = f.sqlite.prepare('SELECT expires_at FROM sessions').get().expires_at;
+  assert.equal(renewedExpiry, originalExpiry + 1000);
+  f.advance(1000);
+  const blocked = await f.request('/v1/session', { method: 'POST', identity: guest, body: {} });
+  assert.equal(blocked.response.status, 429);
+  assert.deepEqual(blocked.data, { error: 'rate_limited' });
+  assert.equal(blocked.response.headers.get('Retry-After'), '3600');
+  assert.equal(blocked.response.headers.get('Set-Cookie'), null);
+  assert.equal(f.sqlite.prepare('SELECT expires_at FROM sessions').get().expires_at, renewedExpiry);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM guests').get().n, 1);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM sessions').get().n, 1);
+  assert.equal((await f.request('/v1/me', { identity: guest })).response.status, 200, 'Throttling must not log the guest out');
+  f.advance(3600000);
+  const nextWindow = await f.request('/v1/session', { method: 'POST', identity: guest, body: {} });
+  assert.equal(nextWindow.response.status, 200);
+  assert.equal(nextWindow.data.user.id, guest.user.id);
+});
+
+test('concurrent renewal cannot exceed the shared write budget and requires network identity', async t => {
+  const f = fixture(); t.after(() => f.sqlite.close());
+  const guest = await f.guest();
+  const expiry = f.sqlite.prepare('SELECT expires_at FROM sessions').get().expires_at;
+  f.advance(1000);
+  const missingIp = await f.request('/v1/session', { method: 'POST', identity: guest, body: {}, ip: '' });
+  assert.equal(missingIp.response.status, 503);
+  assert.deepEqual(missingIp.data, { error: 'network_identity_unavailable' });
+  assert.equal(f.sqlite.prepare('SELECT expires_at FROM sessions').get().expires_at, expiry);
+  const results = await Promise.all(Array.from({ length: 130 }, () =>
+    f.request('/v1/session', { method: 'POST', identity: guest, body: {} })));
+  assert.equal(results.filter(result => result.response.status === 200).length, 120);
+  assert.equal(results.filter(result => result.response.status === 429).length, 10);
+  assert.equal((await f.request('/v1/runs', { method: 'POST', identity: guest, body: { mode: MODE } })).response.status, 429);
+  const differentIp = await f.request('/v1/session', { method: 'POST', identity: guest, body: {}, ip: '203.0.113.9' });
+  assert.equal(differentIp.response.status, 200);
+  assert.equal(differentIp.data.user.id, guest.user.id);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM guests').get().n, 1);
+});
+
+test('deletion between session lookup and renewal cannot reissue the deleted identity', async t => {
+  const f = fixture(); t.after(() => f.sqlite.close());
+  const guest = await f.guest();
+  const originalPrepare = f.env.DB.prepare;
+  let intercepted = false;
+  f.env.DB.prepare = sql => {
+    const statement = originalPrepare(sql);
+    if (sql.startsWith('UPDATE sessions SET expires_at')) {
+      // Model the other tab committing deletion after the authenticated read
+      // but immediately before the renewal statement reaches D1.
+      for (const method of ['first', 'run']) {
+        const execute = statement[method];
+        statement[method] = async () => {
+          intercepted = true;
+          f.sqlite.prepare('DELETE FROM guests WHERE id = ?').run(guest.user.id);
+          return execute();
+        };
+      }
+    }
+    return statement;
+  };
+  const renewal = await f.request('/v1/session', { method: 'POST', identity: guest, body: {} });
+  assert.equal(intercepted, true);
+  assert.equal(renewal.response.status, 401);
+  assert.deepEqual(renewal.data, { error: 'session_required' });
+  assert.equal(renewal.response.headers.get('Set-Cookie'), null);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM guests').get().n, 0);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM sessions').get().n, 0);
+  assert.equal((await f.request('/v1/me', { identity: guest })).response.status, 401);
+});
+
 test('deletion removes guest results and credentials, clears cookie, and preserves others', async t => {
   const f = fixture(); t.after(() => f.sqlite.close());
   const guest = await f.guest(), other = await f.guest(), run = await f.start(guest);

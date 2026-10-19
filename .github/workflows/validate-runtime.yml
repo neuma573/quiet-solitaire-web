@@ -1,0 +1,57 @@
+name: Validate guarded Web runtime
+
+# The ci branch lane runs the production build and browser checks without
+# publishing to Pages. Only repository writers can push these branches.
+on:
+  push:
+    branches: ['ci/**']
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Read current source main with existing read-only access
+        id: source
+        env:
+          SOURCE_DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
+        run: python3 scripts/source.py --directory "$RUNNER_TEMP/private-source"
+      - name: Require a checked out source for validation
+        run: test '${{ steps.source.outputs.changed }}' = 'true'
+      - name: Install checksum-verified Godot and Web templates
+        run: python3 scripts/install_godot.py --directory "$RUNNER_TEMP/godot"
+      - name: Run Python and compiled bridge regression tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Run original source tests and guarded production export
+        id: export
+        run: python3 scripts/build.py --source "$RUNNER_TEMP/private-source" --output "$RUNNER_TEMP/site"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Install locked browser verification dependencies
+        run: |
+          npm ci --ignore-scripts
+          npx playwright install --with-deps chromium
+          mkdir -p "$RUNNER_TEMP/screenshots"
+      - name: Verify fixed phone runtime at standard and high pixel density
+        run: |
+          node scripts/smoke.mjs --directory "$RUNNER_TEMP/site" --density 1 --screenshot "$RUNNER_TEMP/screenshots/smoke-1.png"
+          node scripts/smoke.mjs --directory "$RUNNER_TEMP/site" --density 2 --screenshot "$RUNNER_TEMP/screenshots/smoke-2.png"
+      - name: Verify compiled My Page and guest API integration
+        run: node tests/leaderboard-export-browser.mjs --directory "$RUNNER_TEMP/site" --screenshots "$RUNNER_TEMP/screenshots/profile"
+      - name: Retain audited runtime and browser evidence only
+        if: always() && steps.export.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: web-runtime-validation-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/site
+            ${{ runner.temp }}/screenshots/**/*.png
+          retention-days: 1
+          if-no-files-found: error

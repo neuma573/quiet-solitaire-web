@@ -185,6 +185,7 @@ var busy: bool = false
 var score_buttons: Array[Button] = []
 var draw_buttons: Array[Button] = []
 var retry: Button
+var difficulty_choice: OptionButton
 func _ready() -> void:
     _content = VBoxContainer.new()
     add_child(_content)
@@ -195,6 +196,11 @@ func _ready() -> void:
         add_child(button)
         buttons.append(button)
         button.pressed.connect(refresh)
+    difficulty_choice = OptionButton.new()
+    add_child(difficulty_choice)
+    difficulty_choice.add_item("All")
+    difficulty_choice.add_item("Normal")
+    difficulty_choice.item_selected.connect(func(_index: int) -> void: refresh())
     retry = Button.new()
     add_child(retry)
     retry.pressed.connect(refresh)
@@ -276,6 +282,10 @@ func _run() -> void:
     page.draw_buttons[0].emit_signal("pressed")
     await process_frame
     _check(page.profile.player_name.text == "Guest Pine", "Draw filter refresh preserves the server nickname")
+    page.difficulty_choice.emit_signal("item_selected", 1)
+    await process_frame
+    await process_frame
+    _check(page.profile.player_name.text == "Guest Pine", "Difficulty filter refresh preserves the server nickname without an explicit observer hook")
     page.retry.emit_signal("pressed")
     await process_frame
     _check(page.profile.player_name.text == "Guest Pine", "Local statistics retry preserves the server nickname")

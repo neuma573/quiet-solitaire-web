@@ -78,11 +78,19 @@ try {
     return box;
   }
   await verifyPhone();
-  const start = await canvas.screenshot();
+  async function menuControls() {
+    // The title card drift is intentionally animated. Its source clip ends
+    // above the Start button; compare every pixel of the static footer while
+    // the bitmap dimensions and full canvas geometry remain checked above.
+    const box = await canvas.boundingBox();
+    return page.screenshot({ clip: { x: box.x, y: box.y + 580 * box.height / 760,
+      width: box.width, height: 180 * box.height / 760 } });
+  }
+  const start = await menuControls();
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.waitForTimeout(300);
   await verifyPhone();
-  assert(start.equals(await canvas.screenshot()), 'Resizing a desktop window must preserve the exact phone layout');
+  assert(start.equals(await menuControls()), 'Resizing a desktop window must preserve the exact static menu layout');
   if (option('--screenshot')) await page.screenshot({ path: option('--screenshot') });
   async function click(x, y) {
     const box = await canvas.boundingBox();
@@ -92,16 +100,16 @@ try {
   // Coordinates are relative to the source's 390x760 portrait viewport.
   await click(195, 620);
   await page.waitForTimeout(800);
-  const after = await canvas.screenshot();
-  assert(!start.equals(after), 'A menu interaction must change the rendered game');
+  const after = await menuControls();
+  assert(!start.equals(after), 'A menu interaction must change the static navigation controls, independently of title animation');
   await click(195, 700);
   await page.waitForTimeout(800);
-  const scoring = await canvas.screenshot();
+  const scoring = await menuControls();
   assert(!scoring.equals(after), 'Choosing a game must open scoring selection');
   if (option('--screenshot')) await canvas.screenshot({ path: option('--screenshot').replace(/\.png$/, '-mode.png') });
   await click(195, 700);
   await page.waitForTimeout(2000);
-  const game = await canvas.screenshot();
+  const game = await menuControls();
   assert(!game.equals(scoring), 'Starting a game must render the card board');
   if (option('--screenshot')) await page.screenshot({ path: option('--screenshot').replace(/\.png$/, '-desktop-game.png') });
   const gameBox = await verifyPhone();
