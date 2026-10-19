@@ -160,7 +160,11 @@ export async function handle(request, env, clock = Date.now) {
         await networkLimit(request, env, now, 'write', 120);
         // Explicitly returning to the feature renews this same identity and bearer.
         // No new account or XP history is created by renewal.
-        await env.DB.prepare('UPDATE sessions SET expires_at = ? WHERE token_hash = ?').bind(now + SESSION_MS, existing.token_hash).run();
+        const renewed = await env.DB.prepare('UPDATE sessions SET expires_at = ? WHERE token_hash = ? RETURNING token_hash')
+          .bind(now + SESSION_MS, existing.token_hash).first();
+        // Another tab can delete the guest (cascading its session) after the
+        // lookup. Never reissue a bearer or stale profile for a missing row.
+        if (!renewed) fail(401, 'session_required');
         response = json(privateProfile(existing), 200, { 'Set-Cookie': cookie(cookieValue(request)) });
       }
       else {

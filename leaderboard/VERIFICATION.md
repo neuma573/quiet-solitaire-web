@@ -240,8 +240,11 @@ the expiry. The guest ID, nickname, XP, bearer and CSRF token are retained.
 The new regression cases check shared quota consumption with run creation and
 nickname edits, expiry/cookie preservation on rejection, continued read access,
 next-window recovery, missing network identity and 130 concurrent renewals.
-Exactly 120 concurrent requests succeed and 10 are throttled. All **47 Node
-tests** pass locally, as does the pinned Godot bridge lifecycle test extended
+Exactly 120 concurrent requests succeed and 10 are throttled. A further review
+caught deletion between the session lookup and renewal: `UPDATE ... RETURNING`
+now confirms the session still exists, otherwise returning 401 without a cookie
+or deleted profile. A deterministic interleaving regression covers that race.
+All **48 Node tests** pass locally, as does the pinned Godot bridge lifecycle test extended
 with a difficulty-filter nickname-refresh case.
 
 The failed post-merge deployment used source main

@@ -213,6 +213,37 @@ test('concurrent renewal cannot exceed the shared write budget and requires netw
   assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM guests').get().n, 1);
 });
 
+test('deletion between session lookup and renewal cannot reissue the deleted identity', async t => {
+  const f = fixture(); t.after(() => f.sqlite.close());
+  const guest = await f.guest();
+  const originalPrepare = f.env.DB.prepare;
+  let intercepted = false;
+  f.env.DB.prepare = sql => {
+    const statement = originalPrepare(sql);
+    if (sql.startsWith('UPDATE sessions SET expires_at')) {
+      // Model the other tab committing deletion after the authenticated read
+      // but immediately before the renewal statement reaches D1.
+      for (const method of ['first', 'run']) {
+        const execute = statement[method];
+        statement[method] = async () => {
+          intercepted = true;
+          f.sqlite.prepare('DELETE FROM guests WHERE id = ?').run(guest.user.id);
+          return execute();
+        };
+      }
+    }
+    return statement;
+  };
+  const renewal = await f.request('/v1/session', { method: 'POST', identity: guest, body: {} });
+  assert.equal(intercepted, true);
+  assert.equal(renewal.response.status, 401);
+  assert.deepEqual(renewal.data, { error: 'session_required' });
+  assert.equal(renewal.response.headers.get('Set-Cookie'), null);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM guests').get().n, 0);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM sessions').get().n, 0);
+  assert.equal((await f.request('/v1/me', { identity: guest })).response.status, 401);
+});
+
 test('deletion removes guest results and credentials, clears cookie, and preserves others', async t => {
   const f = fixture(); t.after(() => f.sqlite.close());
   const guest = await f.guest(), other = await f.guest(), run = await f.start(guest);

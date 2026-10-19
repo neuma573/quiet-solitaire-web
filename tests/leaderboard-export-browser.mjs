@@ -175,16 +175,11 @@ try {
     await click(195, 421);
     await page.waitForTimeout(200);
     await page.screenshot({ path: join(screenshotDirectory, `difficulty-${index}-popup.png`) });
-    // Godot consumes browser key events on its next engine frame. Let each
-    // navigation event reach the popup before activating its focused item.
-    async function popupKey(key) {
-      await page.keyboard.press(key, { delay: 60 });
-      await page.waitForTimeout(100);
-      await frames();
-    }
-    await popupKey('Home');
-    for (let step = 0; step < index; step++) await popupKey('ArrowDown');
-    await popupKey('Enter');
+    // Select the real popup row with pointer input. Its reviewed export has
+    // five 24-pixel rows centered at y=460..556. Browser keyboard events do
+    // not select this embedded popup reliably; selection pixels below must
+    // still change and all five options must return to the original state.
+    await click(100, 460 + index * 24);
     await settleControls();
     const current = await nativeCrop(`difficulty-${index}`, 28, 405, 260, 32);
     assert.ok(!previousDifficulty.equals(current), `Difficulty option ${index} must change the displayed selection`);
