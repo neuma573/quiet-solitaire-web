@@ -121,7 +121,7 @@ node tests/leaderboard-page-browser.mjs
 node tests/leaderboard-page-browser.mjs --directory /path/to/export
 ```
 
-## 웹 리더보드 (로컬 구현, 서버 연결 전)
+## 웹 리더보드
 
 리더보드는 **누적 XP 내림차순**이며 순위·닉네임·XP만 표시합니다. 서버가 랜덤 닉네임과
 별도 고유 ID를 발급하므로 닉네임을 바꿔도 ID와 XP는 유지됩니다. 사용자가 참여한 뒤 새로
@@ -132,9 +132,10 @@ node tests/leaderboard-page-browser.mjs --directory /path/to/export
   게임의 시간·이동 수 표시를 가리지 않도록 게임 shell에서는 별도의 떠 있는 실행 버튼을 숨깁니다.
 - `leaderboard/`는 별도의 게임 API와 D1 스키마입니다. `worker/`와 루트 `wrangler.jsonc`의
   기존 GitHub 웹훅, 토큰, 배포 책임은 공유하지 않습니다.
-- 기본 `web/leaderboard-config.json`의 `apiBase`는 비어 있어 공유 기능이 꺼져 있습니다.
-  필요한 서버·DB·도메인·비밀값과 연결 절차는 [리더보드 설정 문서](leaderboard/README.md)를 참조하세요.
-  이 구현은 외부 리소스를 만들거나 배포하지 않습니다.
+- `web/leaderboard-config.json`은 게임과 순위 페이지를 배포된
+  `https://solitaire-api.neuma573.com` API에 연결합니다. 이 설정은 main 병합 후 웹 배포부터 적용됩니다.
+  게스트 참여는 사용자가 직접 선택하며, `apiBase`를 빈 문자열로 되돌리면 API 호출 없이 준비 안내를 표시합니다.
+  실제 서버 설정과 검증 범위는 [리더보드 설정 문서](leaderboard/README.md)를 참조하세요.
 - 게스트는 HttpOnly 쿠키로 인증합니다. 닉네임이나 클라이언트가 보낸 ID로 쓰기를 인증하지 않습니다.
   쿠키 삭제·브라우저 변경·다른 기기에서는 기존 ID와 XP를 복구할 수 없으며 로그인 기능은 없습니다.
 - 서버의 지급량 계산·중복 지급 방지·기본 요청 제한은 포함하지만, 브라우저의 승리 보고 자체를
@@ -209,3 +210,4 @@ dispatch 토큰은 GitHub에서 폐기하고 Worker Secret을 제거합니다. H
 공식 참고: [GitHub Pages workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages),
 [GitHub Webhook signature validation](https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries),
 [Godot 4.7 Web export](https://docs.godotengine.org/en/4.7/tutorials/export/exporting_for_web.html).
+

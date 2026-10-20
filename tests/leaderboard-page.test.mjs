@@ -45,10 +45,11 @@ test('read-only board request shares existing API contract and supports cancella
   assert.equal(calls[0].options.body, undefined);
 });
 
-test('standalone imports cannot start game overlay and default API remains disabled', async () => {
+test('standalone imports cannot start game overlay and share the reviewed API address', async () => {
   const source = await readFile(new URL('../web/leaderboard/page.mjs', import.meta.url), 'utf8');
   assert.ok(!source.includes("from '../leaderboard.mjs'"));
   assert.ok(!/\.(session|rename|remove|startRun|finishRun)\(/.test(source));
   const config = JSON.parse(await readFile(new URL('../web/leaderboard-config.json', import.meta.url), 'utf8'));
-  assert.equal(config.apiBase, '');
+  assert.equal(config.apiBase, 'https://solitaire-api.neuma573.com');
 });
+
