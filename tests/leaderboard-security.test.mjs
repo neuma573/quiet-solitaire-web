@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { readFileSync } from 'node:fs';
+import { applyMigrations } from './leaderboard-migrations.mjs';
 import { handle, normalizeNickname } from '../leaderboard/index.mjs';
 
 const ORIGIN = 'https://neuma573.com';
@@ -12,7 +12,7 @@ const RESULT = { score: 1000, elapsedMs: 1000, moves: 100, won: true };
 // uniqueness constraints, foreign keys and the XP credit trigger.
 function fixture() {
   const sqlite = new DatabaseSync(':memory:');
-  sqlite.exec(readFileSync(new URL('../leaderboard/migrations/0001_guest_xp.sql', import.meta.url), 'utf8'));
+  applyMigrations(sqlite);
   const prepare = sql => {
     let bindings = [];
     return {
@@ -125,10 +125,12 @@ test('failed XP update rolls back the contribution so a safe retry can credit on
   assert.deepEqual(failed.data, { error: 'internal_error' });
   assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS count FROM results').get().count, 0);
   assert.equal(f.sqlite.prepare('SELECT xp FROM guests').get().xp, 0);
+  assert.equal(f.sqlite.prepare('SELECT cleanup_pending FROM runs WHERE id = ?').get(run.id).cleanup_pending, 1);
   f.sqlite.exec('DROP TRIGGER fail_credit');
   const retried = await f.finish(guest, run, key);
   assert.equal(retried.response.status, 201);
   assert.equal(f.sqlite.prepare('SELECT xp FROM guests').get().xp, retried.data.result.xpAwarded);
+  assert.equal(f.sqlite.prepare('SELECT cleanup_pending FROM runs WHERE id = ?').get(run.id).cleanup_pending, 0);
 });
 
 test('nickname normalization rejects markup and invisible controls while preserving identity and XP', async t => {
@@ -269,3 +271,4 @@ test('body limits and strict schema prevent bulk/legacy XP uploads', async t => 
   assert.equal((await f.request('/v1/session', { method: 'POST', body: '{}', headers: { 'Content-Type': 'text/plain' } })).response.status, 415);
   assert.equal(f.sqlite.prepare('SELECT xp FROM guests').get().xp, 0);
 });
+

@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { readFileSync } from 'node:fs';
+import { applyMigrations } from './leaderboard-migrations.mjs';
 import worker, { handle, calculateXp, normalizeNickname, cleanup } from '../leaderboard/index.mjs';
 import { createLeaderboardClient } from '../web/leaderboard.mjs';
 
 function database() {
   const sqlite = new DatabaseSync(':memory:');
-  sqlite.exec(readFileSync(new URL('../leaderboard/migrations/0001_guest_xp.sql', import.meta.url), 'utf8'));
+  applyMigrations(sqlite);
   const wrap = (sql, args = []) => ({
     sql, args,
     bind(...values) { return wrap(sql, values); },
@@ -256,3 +256,4 @@ test('Worker fetch adapter ignores ExecutionContext and fails closed when unconf
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: 'not_configured' });
 });
+
