@@ -167,6 +167,10 @@ node tests/profile-input-browser.mjs --url https://neuma573.com/quiet-solitaire-
 `GODOT_BIN`을 설정하면 Python 검증에 실제 Godot 어댑터 수명주기 검사도 포함됩니다.
 브라우저 검사는 `CHROME_BIN`으로 설치된 Chromium 계열 브라우저를 지정할 수 있습니다.
 API 브라우저 검사는 실제 핸들러와 SQLite를 사용하지만 Cloudflare 런타임·배포 검사를 대신하지는 않습니다.
+`ci/**` 검증은 Linux에서 원본 테스트·export·Chromium 검사를 통과한 동일 공개 런타임을
+macOS로 가져와 WebKit의 터치·포커스·게임 입력을 검사합니다. Ubuntu WebKit에서는 모든 입력 assertion이
+통과한 뒤 `glBlitFramebuffer` 검증 오류가 수집되어 실패했으므로, Linux WebKit까지 검증됐다고 주장하지 않습니다.
+macOS WebKit 검사도 모든 콘솔·Godot·자산 오류를 실패로 처리하며 오류 예외 목록을 추가하지 않습니다.
 
 ## 로컬 빌드 검증
 
