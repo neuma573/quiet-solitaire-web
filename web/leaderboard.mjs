@@ -1,5 +1,6 @@
 /* Web-owned guest profile and leaderboard overlay. No game save/auth data is stored here. */
-import { LeaderboardError, normalizeApiBase, normalizeNickname, createLeaderboardClient } from './leaderboard-api.mjs';
+import { LeaderboardError, normalizeApiBase, normalizeNickname, createLeaderboardClient,
+  captureGuestLifecycle, GUEST_DELETION_KEY } from './leaderboard-api.mjs';
 export { LeaderboardError, normalizeApiBase, normalizeNickname, createLeaderboardClient };
 
 export function validMode(mode) {
@@ -19,7 +20,7 @@ export class LeaderboardService {
   constructor(client, { randomUUID = () => globalThis.crypto.randomUUID(), onChange = () => {} } = {}) {
     this.client = client; this.randomUUID = randomUUID; this.onChange = onChange;
     this.profile = null; this.participating = false; this.active = null; this.pending = new Map();
-    this.connection = null; this.deleted = false;
+    this.connection = null; this.deleted = false; this.connectionBlocked = false;
     this.seen = new Set(); this.epoch = 0; this.boardGeneration = 0; this.disposed = false;
     this.state = { enabled: client.enabled, busy: false, loadingBoard: false, entries: [], message: '', error: '', connectionError: '', pendingCount: 0 };
   }
@@ -38,7 +39,7 @@ export class LeaderboardService {
   }
   join() {
     if (this.connection) return this.connection;
-    if (this.state.busy || !this.client.enabled || this.deleted || this.disposed) return Promise.resolve();
+    if (this.state.busy || !this.client.enabled || this.deleted || this.connectionBlocked || this.disposed) return Promise.resolve();
     const epoch = ++this.epoch;
     this.boardGeneration++; this.state.loadingBoard = false;
     this.state.busy = true; this.state.error = ''; this.state.connectionError = ''; this.changed();
@@ -48,7 +49,13 @@ export class LeaderboardService {
         if (this.disposed || this.epoch !== epoch) return;
         this.setProfile(data.user); this.participating = true;
         this.state.message = '';
-      } catch (error) { if (this.epoch === epoch) this.state.connectionError = error.message; }
+      } catch (error) {
+        if (this.epoch === epoch) {
+          if (error.reason === 'guest_deleted') { this.deleted = true; this.profile = null; this.participating = false; }
+          if (error.reason === 'cookie_unavailable') this.connectionBlocked = true;
+          this.state.connectionError = error.message;
+        }
+      }
       finally { if (this.epoch === epoch) { this.state.busy = false; this.changed(); } }
     })();
     this.connection = pending;
@@ -270,7 +277,7 @@ export function mountLeaderboard({ document = globalThis.document, window = glob
   dialog.addEventListener('close', () => { confirmDelete.hidden = true; previousFocus?.focus?.(); });
   form.addEventListener('submit', guarded(() => service.rename(input.value)));
   refresh.addEventListener('click', guarded(async () => {
-    if (!service.participating && !service.deleted) await service.join();
+    if (!service.participating && !service.deleted && !service.connectionBlocked) await service.join();
     await service.refreshBoard();
   }));
   retry.addEventListener('click', guarded(() => service.retryPending()));
@@ -291,38 +298,62 @@ export function mountLeaderboard({ document = globalThis.document, window = glob
   // Suspending clears the active attempt; restoring reconnects the cookie,
   // never an old run or historical local result.
   const pagehide = () => service.leave();
-  const pageshow = event => { if (event.persisted) void service.join(); };
+  const syncDeletion = () => {
+    if (!client.hasDeletion?.()) return false;
+    service.leave(); service.deleted = true; service.profile = null;
+    service.state.message = '다른 탭에서 기록이 삭제되었습니다. 새로고침하면 새 고유 ID가 생성됩니다.';
+    service.changed(); return true;
+  };
+  const pageshow = event => { if (event.persisted && !syncDeletion()) void service.join(); };
+  const storage = event => { if (event.key === GUEST_DELETION_KEY || event.key === null) syncDeletion(); };
   window.addEventListener('quiet-leaderboard', eventListener);
   window.addEventListener('pagehide', pagehide);
   window.addEventListener('pageshow', pageshow);
+  window.addEventListener('storage', storage);
   service.changed();
-  void service.join();
+  if (!syncDeletion()) void service.join();
   return { service, open, destroy() {
     service.dispose(); root.remove(); window.removeEventListener('quiet-leaderboard', eventListener);
     window.removeEventListener('pagehide', pagehide);
     window.removeEventListener('pageshow', pageshow);
+    window.removeEventListener('storage', storage);
     if (window.QuietLeaderboardBridge === bridge) delete window.QuietLeaderboardBridge;
   } };
 }
 
 const boots = new WeakMap();
 export function bootLeaderboard({ document = globalThis.document, window = globalThis.window,
-  fetchImpl = globalThis.fetch } = {}) {
+  fetchImpl = globalThis.fetch, guestLifecycle = captureGuestLifecycle(window) } = {}) {
   if (boots.has(document)) return boots.get(document);
-  const pending = (async () => {
+  let ended = false, mounted = false, pending;
+  const controller = new AbortController();
+  const cancel = () => { ended = true; controller.abort(); if (boots.get(document) === pending) boots.delete(document); };
+  const resume = event => {
+    if (event.persisted && ended && !mounted) {
+      window.removeEventListener('pageshow', resume);
+      void bootLeaderboard({ document, window, fetchImpl, guestLifecycle });
+    }
+  };
+  window.addEventListener('pagehide', cancel, { once: true });
+  window.addEventListener('pageshow', resume);
+  pending = (async () => {
     let apiBase = '';
     try {
-      const response = await fetchImpl(new URL('leaderboard-config.json', document.baseURI), { cache: 'no-store', credentials: 'same-origin' });
+      const response = await fetchImpl(new URL('leaderboard-config.json', document.baseURI), { cache: 'no-store', credentials: 'same-origin', signal: controller.signal });
       if (response.ok) apiBase = (await response.json()).apiBase ?? '';
       apiBase = normalizeApiBase(apiBase, window.location);
     } catch { apiBase = ''; /* Missing/invalid public config keeps the shared feature disabled. */ }
-    const mounted = mountLeaderboard({ document, window, client: createLeaderboardClient({ apiBase, fetchImpl, location: window.location,
-      locks: window.navigator?.locks }) });
-    const destroy = mounted.destroy;
-    mounted.destroy = () => { boots.delete(document); destroy(); };
-    return mounted;
+    if (ended) return null;
+    mounted = true;
+    window.removeEventListener('pagehide', cancel); window.removeEventListener('pageshow', resume);
+    const result = mountLeaderboard({ document, window, client: createLeaderboardClient({ apiBase, fetchImpl, location: window.location,
+      locks: window.navigator?.locks, guestLifecycle }) });
+    const destroy = result.destroy;
+    result.destroy = () => { if (boots.get(document) === pending) boots.delete(document); destroy(); };
+    return result;
   })();
   boots.set(document, pending);
+  if (ended) boots.delete(document);
   pending.catch(() => { if (boots.get(document) === pending) boots.delete(document); });
   return pending;
 }

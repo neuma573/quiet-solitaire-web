@@ -9,6 +9,7 @@ const requests = [];
 const hostile = '<img src=x onerror=window.__nicknameXss=true>';
 const address = 'https://quiet-leaderboard.test/';
 let sessionStatus = 200;
+let denyCookie = false;
 async function fixtureRoute(route) {
   const req = route.request();
   const url = new URL(req.url());
@@ -32,7 +33,8 @@ async function fixtureRoute(route) {
     }
     if (url.pathname === '/api/v1/session') return sessionStatus === 200
       ? send({ user: profile, csrfToken: 'csrf-test' }) : send({ private: 'must not render server details' }, sessionStatus);
-    if (url.pathname === '/api/v1/me' && req.method() === 'GET') return send({ user: profile, csrfToken: 'csrf-test' });
+    if (url.pathname === '/api/v1/me' && req.method() === 'GET') return denyCookie
+      ? send({ error: 'session_required' }, 401) : send({ user: profile, csrfToken: 'csrf-test' });
     if (url.pathname === '/api/v1/me' && req.method() === 'PATCH') { profile = { ...profile, nickname: body.nickname }; return send({ user: profile }); }
     if (url.pathname === '/api/v1/me' && req.method() === 'DELETE') { profile = null; return route.fulfill({ status: 204, body: '' }); }
     if (url.pathname === '/api/v1/runs') return send({ run: { id: 'server-run', mode: body.mode } });
@@ -52,7 +54,8 @@ const installed = process.platform === 'win32' ? 'C:\\Program Files\\Google\\Chr
 const browser = await chromium.launch({ headless: true,
   executablePath: process.env.CHROME_BIN || (existsSync(installed) ? installed : undefined) });
 try {
-  const page = await browser.newPage({ viewport: { width: 320, height: 568 }, locale: 'ko-KR' });
+  const context = await browser.newContext({ viewport: { width: 320, height: 568 }, locale: 'ko-KR' });
+  const page = await context.newPage();
   // Every browser request is fulfilled in process: no external or local-network access is needed.
   await page.route('**/*', fixtureRoute);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
@@ -100,6 +103,17 @@ try {
   await page.locator('.ql-dialog').waitFor({ state: 'visible' });
   assert.equal(await name.evaluate(element => element === document.activeElement), true, 'Native My Page event must focus nickname');
   if (process.env.LEADERBOARD_SCREENSHOT) await page.screenshot({ path: process.env.LEADERBOARD_SCREENSHOT.replace(/\.png$/, '-my-page.png') });
+  const cachedPeer = await page.context().newPage();
+  await cachedPeer.addInitScript(() => {
+    // A frozen bfcache page need not receive another tab's storage event.
+    const add = window.addEventListener.bind(window);
+    window.addEventListener = (type, listener, options) => { if (type !== 'storage') add(type, listener, options); };
+  });
+  await cachedPeer.route('**/*', fixtureRoute);
+  await cachedPeer.goto(address);
+  await cachedPeer.waitForFunction(() => !!window.QuietLeaderboardBridge.profile());
+  await cachedPeer.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  const connectionsBeforeDelete = requests.filter(req => req.path === '/api/v1/session').length;
   await page.getByRole('button', { name: '나의 모든 기록 삭제', exact: true }).click();
   assert.equal(requests.some(req => req.method === 'DELETE'), false, 'Opening the confirmation does not delete');
   await page.getByRole('button', { name: '취소', exact: true }).click();
@@ -107,7 +121,11 @@ try {
   await page.getByRole('button', { name: '삭제하기', exact: true }).click();
   await page.waitForFunction(() => window.QuietLeaderboardBridge.profile() === null);
   await page.getByRole('button', { name: '새로고침', exact: true }).click();
-  assert.equal(requests.filter(req => req.path === '/api/v1/session').length, 1, 'Deletion must not immediately recreate a guest');
+  assert.equal(requests.filter(req => req.path === '/api/v1/session').length, connectionsBeforeDelete, 'Deletion must not immediately recreate a guest');
+  await cachedPeer.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await cachedPeer.waitForFunction(() => window.QuietLeaderboardBridge.profile() === null);
+  assert.equal(requests.filter(req => req.path === '/api/v1/session').length, connectionsBeforeDelete,
+    'A bfcache restore must read the cross-tab deletion marker before any session POST');
   assert.deepEqual(errors, []);
   sessionStatus = 503;
   const failedPage = await browser.newPage({ viewport: { width: 320, height: 568 } });
@@ -120,5 +138,50 @@ try {
   await failedPage.getByRole('button', { name: '닫기', exact: true }).click();
   await failedPage.locator('canvas').click({ position: { x: 10, y: 10 } });
   assert.equal(await failedPage.evaluate(() => window.QuietLeaderboardBridge.profile()), null);
+  const departing = await browser.newPage();
+  await departing.addInitScript(({ apiBase }) => {
+    const original = window.fetch.bind(window);
+    window.fetch = (url, options) => {
+      if (String(url).endsWith('/leaderboard-config.json') && !window.fixtureConfigResolved) {
+        return new Promise(resolve => {
+          window.fixtureResolveConfig = () => {
+            window.fixtureConfigResolved = true;
+            resolve(new Response(JSON.stringify({ apiBase }), { headers: { 'Content-Type': 'application/json' } }));
+          };
+        });
+      }
+      return original(url, options);
+    };
+  }, { apiBase: address + 'api' });
+  await departing.route('**/*', fixtureRoute);
+  await departing.goto(address);
+  await departing.waitForFunction(() => !!window.fixtureResolveConfig);
+  const beforeDeparture = requests.filter(req => req.path === '/api/v1/session').length;
+  await departing.evaluate(() => {
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
+    window.fixtureResolveConfig(); // Deliberately ignores AbortSignal to test the late-result guard.
+  });
+  await departing.waitForTimeout(50);
+  assert.equal(await departing.locator('.ql-root').count(), 0, 'A late config cannot mount after pagehide');
+  assert.equal(requests.filter(req => req.path === '/api/v1/session').length, beforeDeparture);
+  await departing.evaluate(() => {
+    localStorage.setItem('quiet-leaderboard:deletion-generation', 'fixture-deleted-while-suspended');
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+  });
+  await departing.locator('.ql-root').waitFor();
+  assert.equal(await departing.evaluate(() => window.QuietLeaderboardBridge.profile()), null);
+  assert.equal(requests.filter(req => req.path === '/api/v1/session').length, beforeDeparture,
+    'Restarted boot retains its original deletion generation instead of treating bfcache as a fresh visit');
+  sessionStatus = 200; denyCookie = true;
+  profile = { id: 'cookie-blocked-id', nickname: '포근한 고양이042', xp: 0 };
+  const cookieBlocked = await browser.newPage();
+  await cookieBlocked.route('**/*', fixtureRoute);
+  await cookieBlocked.goto(address);
+  await cookieBlocked.getByRole('button', { name: '순위 · 마이페이지' }).click();
+  await cookieBlocked.getByText('게스트 쿠키를 확인할 수 없습니다. 쿠키 설정을 확인한 뒤 페이지를 새로고침해 주세요.', { exact: true }).waitFor();
+  const beforeRefresh = requests.filter(req => req.path === '/api/v1/session').length;
+  for (let i = 0; i < 3; i++) await cookieBlocked.getByRole('button', { name: '새로고침', exact: true }).click();
+  assert.equal(requests.filter(req => req.path === '/api/v1/session').length, beforeRefresh,
+    'Board refresh cannot create more unreachable guests when the cookie was rejected');
   console.log('Browser overlay passed: automatic connection, single boot, 320px layout, keyboard focus, nickname XSS text, stable identity, single result and confirmed deletion without immediate recreation.');
 } finally { await browser.close(); }

@@ -115,6 +115,10 @@ try {
   assert.equal(deletedStatus, 401);
   const afterDeleteB = await pageB.evaluate(() => window.client.board());
   assert.deepEqual(afterDeleteB.entries.map(row => [row.rank, row.xp, row.isMe]), [[1, 300, true]]);
+  const staleStatus = await sameBrowserTab.evaluate(async () => {
+    try { await window.client.session(); return 'connected'; } catch (error) { return error.reason; }
+  });
+  assert.equal(staleStatus, 'guest_deleted', 'A pre-deletion tab cannot recreate the deleted guest on restore');
   for (const table of ['guests', 'sessions', 'runs', 'results'])
     assert.equal(sqlite.prepare(`SELECT count(*) AS n FROM ${table}`).get().n, 1, `Delete must preserve only other guest's ${table}`);
   assert.ok(apiRequests.some(request => request.hasCookie && request.method === 'POST' && request.path === '/api/v1/runs'));

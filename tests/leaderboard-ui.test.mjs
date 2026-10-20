@@ -10,6 +10,10 @@ const started = (id = attemptId, rules = mode) => ({ type: 'started', attemptId:
 const completed = (id = attemptId, overrides = {}) => ({ type: 'completed', attemptId: id, mode,
   elapsedMs: 125_000, moves: 110, won: true, score: 1020, ...overrides });
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
+function guestLifecycle() {
+  const values = new Map();
+  return { generation: '', storage: { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, String(value)) } };
+}
 function fixture(overrides = {}) {
   const calls = { starts: [], finishes: [], renames: [], removals: 0 };
   const client = { enabled: true, session: async () => ({ user }),
@@ -36,6 +40,7 @@ test('public API configuration is disabled by default and allows only HTTPS or l
 test('API uses server cookie and in-memory CSRF, never sends profile IDs or local XP', async () => {
   const requests = [];
   const client = createLeaderboardClient({ apiBase: 'https://game.example/api/leaderboard',
+    guestLifecycle: guestLifecycle(),
     locks: { request: async (_name, _options, action) => action() }, fetchImpl: async (url, options) => {
     requests.push({ url, ...options });
     return new Response(JSON.stringify({ user, csrfToken: 'server-csrf' }), { status: 200 });
@@ -68,6 +73,7 @@ test('API errors are bounded user messages, never reflected backend content', as
 test('concurrent connections share one session request and verify the cookie before accepting identity', async () => {
   const response = deferred(); const calls = [];
   const client = createLeaderboardClient({ apiBase: 'https://api.example',
+    guestLifecycle: guestLifecycle(),
     locks: { request: async (_name, options, action) => { assert.equal(options.mode, 'exclusive'); return action(); } },
     fetchImpl: async (url, options) => {
       calls.push({ url, ...options });
@@ -87,18 +93,29 @@ test('concurrent connections share one session request and verify the cookie bef
 test('blocked cookies and unavailable locks fail without accepting identity or silently repeating creates', async () => {
   let calls = 0;
   const client = createLeaderboardClient({ apiBase: 'https://api.example',
+    guestLifecycle: guestLifecycle(),
     locks: { request: async (_name, _options, action) => action() },
     fetchImpl: async (_url, options) => {
       calls++;
       return options.method === 'POST' ? Response.json({ user, csrfToken: 'unpersisted-csrf' }, { status: 201 })
         : Response.json({ error: 'session_required' }, { status: 401 });
     } });
-  await assert.rejects(client.session(), error => error.status === 401);
+  await assert.rejects(client.session(), error => error.reason === 'cookie_unavailable');
+  await assert.rejects(client.session(), error => error.reason === 'cookie_unavailable');
   await new Promise(done => setImmediate(done));
   assert.equal(calls, 2, 'One create followed by one cookie check; no retry loop');
   const unavailable = createLeaderboardClient({ apiBase: 'https://api.example', locks: null,
     fetchImpl: async () => { throw new Error('must not send a request'); } });
   await assert.rejects(unavailable.session(), error => error instanceof LeaderboardError && /브라우저/.test(error.message));
+});
+
+test('a cookie-verification failure stays blocked for this lifecycle instead of creating unreachable guests on refresh', async () => {
+  let connections = 0;
+  const error = new LeaderboardError('쿠키 설정을 확인해 주세요.'); error.reason = 'cookie_unavailable';
+  const { service } = fixture({ session: async () => { connections++; throw error; } });
+  await service.join(); await service.join(); service.leave(); await service.join();
+  assert.equal(connections, 1); assert.equal(service.connectionBlocked, true);
+  assert.equal(service.profile, null); assert.equal(service.participating, false);
 });
 
 test('automatic connection failure keeps game events local and can recover only for a new attempt', async () => {

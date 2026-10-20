@@ -60,7 +60,9 @@ test('API prefix trailing slashes and root settings agree with every client endp
       t.after(() => f.DB.sqlite.close());
       f.env.API_PREFIX = prefix;
       let cookie = '';
+      const values = new Map();
       const client = createLeaderboardClient({ apiBase: 'https://api.example' + (prefix ?? ''),
+        guestLifecycle: { generation: '', storage: { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, String(value)) } },
         locks: { request: async (_name, _options, action) => action() },
         fetchImpl: async (url, options) => {
           const headers = new Headers(options.headers);

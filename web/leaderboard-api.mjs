@@ -3,6 +3,14 @@ export class LeaderboardError extends Error {
   constructor(message, status = 0) { super(message); this.name = 'LeaderboardError'; this.status = status; }
 }
 
+export const GUEST_DELETION_KEY = 'quiet-leaderboard:deletion-generation';
+export function captureGuestLifecycle(window = globalThis.window) {
+  try {
+    const storage = window?.localStorage;
+    return { storage, generation: storage?.getItem(GUEST_DELETION_KEY) ?? '' };
+  } catch { return { storage: null, generation: '' }; }
+}
+
 export function normalizeApiBase(value, location = globalThis.location) {
   if (typeof value !== 'string' || !value.trim()) return '';
   const url = new URL(value, location?.href ?? 'https://localhost/');
@@ -23,10 +31,16 @@ export function normalizeNickname(value) {
 }
 
 export function createLeaderboardClient({ apiBase, fetchImpl = globalThis.fetch, location = globalThis.location,
-  locks = globalThis.navigator?.locks } = {}) {
+  locks = globalThis.navigator?.locks, guestLifecycle = captureGuestLifecycle() } = {}) {
   const base = normalizeApiBase(apiBase, location);
   let csrfToken = '';
   let sessionFlight = null;
+  let cookieFailure = null;
+  function hasDeletion() {
+    if (!guestLifecycle.storage) return false;
+    try { return (guestLifecycle.storage.getItem(GUEST_DELETION_KEY) ?? '') !== guestLifecycle.generation; }
+    catch { return true; }
+  }
   async function request(path, { method = 'GET', body, idempotencyKey, signal } = {}) {
     if (!base) throw new LeaderboardError('공유 리더보드 서버가 아직 연결되지 않았습니다.');
     const headers = { Accept: 'application/json' };
@@ -55,6 +69,7 @@ export function createLeaderboardClient({ apiBase, fetchImpl = globalThis.fetch,
     // Serialize cookie-changing requests across same-origin tabs. Without
     // Web Locks keep the game/read-only board usable, but do not race creates.
     if (!locks?.request) throw new LeaderboardError('이 브라우저에서 게스트를 연결할 수 없습니다. 최신 브라우저로 다시 시도해 주세요.');
+    if (!guestLifecycle.storage) throw new LeaderboardError('브라우저 저장소를 사용할 수 없어 게스트를 연결하지 못했습니다.');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
     try {
@@ -66,13 +81,24 @@ export function createLeaderboardClient({ apiBase, fetchImpl = globalThis.fetch,
     } finally { clearTimeout(timeout); }
   }
   async function session() {
+    if (cookieFailure) throw cookieFailure;
     if (!sessionFlight) {
       sessionFlight = withGuestLock(async signal => {
+        if (hasDeletion()) {
+          const error = new LeaderboardError('다른 탭에서 기록이 삭제되었습니다. 페이지를 새로고침해 주세요.');
+          error.reason = 'guest_deleted'; throw error;
+        }
         const created = await request('/v1/session', { method: 'POST', body: {}, signal });
         // A blocked cookie must not look connected or trigger silent repeated
         // guest creation. Read the cookie-owned identity before accepting it.
-        const restored = await request('/v1/me', { signal });
-        if (!created.user?.id || restored.user?.id !== created.user.id) throw new LeaderboardError('게스트 연결을 확인할 수 없습니다. 다시 시도해 주세요.');
+        const blockedCookie = () => {
+          cookieFailure = new LeaderboardError('게스트 쿠키를 확인할 수 없습니다. 쿠키 설정을 확인한 뒤 페이지를 새로고침해 주세요.');
+          cookieFailure.reason = 'cookie_unavailable'; return cookieFailure;
+        };
+        let restored;
+        try { restored = await request('/v1/me', { signal }); }
+        catch (error) { if ([401, 403].includes(error.status)) throw blockedCookie(); throw error; }
+        if (!created.user?.id || restored.user?.id !== created.user.id) throw blockedCookie();
         return restored;
       });
     }
@@ -83,9 +109,13 @@ export function createLeaderboardClient({ apiBase, fetchImpl = globalThis.fetch,
   return {
     enabled: !!base,
     session,
+    hasDeletion,
     me: () => request('/v1/me'),
     rename: nickname => request('/v1/me', { method: 'PATCH', body: { nickname: normalizeNickname(nickname) } }),
     remove: () => withGuestLock(async signal => {
+      // Non-secret lifecycle marker, never an ID, bearer, or recovery key.
+      // Write before DELETE so ambiguous responses still stop older tabs.
+      guestLifecycle.storage.setItem(GUEST_DELETION_KEY, crypto.randomUUID());
       const result = await request('/v1/me', { method: 'DELETE', signal }); csrfToken = ''; return result;
     }),
     startRun: mode => request('/v1/runs', { method: 'POST', body: { mode } }),

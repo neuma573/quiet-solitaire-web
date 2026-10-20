@@ -151,9 +151,16 @@ valid bearer before considering a new identity; ID/nickname alone cannot do
 that. In-flight connection calls share one promise and repeated UI boots share
 one mount. [Web Locks](https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API)
 serialize session creation/renewal and deletion across same-origin tabs, with
-a ten-second deadline. If locks or cookies are unavailable, or the network
+a ten-second deadline. A single non-secret localStorage deletion-generation
+marker stops pre-deletion tabs, including bfcache restores that missed storage
+events. It contains no guest ID, nickname, bearer, CSRF token, or recovery key.
+Boot captures it before loading config and cancels on early pagehide; a late
+config response cannot start a session from a suspended page. If locks, browser
+storage or cookies are unavailable, or the network
 fails, the game and read-only board remain usable; no retry loop creates more
-guests. The board refresh control can retry a failed connection. The standalone
+guests. A failed cookie verification stays blocked for that page lifecycle,
+including repeated board refreshes; changing cookie settings requires a page
+reload. The board refresh control can retry transient connection failures. The standalone
 ranking page remains read-only and does not itself create guests.
 
 There is no separate participation button or in-game introductory/verification
