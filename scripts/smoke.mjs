@@ -66,11 +66,16 @@ try {
   async function verifyPhone() {
     const bitmap = await canvas.evaluate((element) => ({ width: element.width, height: element.height }));
     const density = await page.evaluate(() => window.devicePixelRatio);
-    assert.deepEqual(bitmap, { width: Math.round(390 * density), height: Math.round(760 * density) },
-      'Game must keep a 390x760 logical resolution with matching high-density rendering at every browser size');
     const viewport = page.viewportSize();
-    const scale = Math.min(1, viewport.width / 390, viewport.height / 760);
+    const maximum = viewport.width <= 600 && viewport.height > viewport.width ? Infinity : 1;
+    const scale = Math.min(maximum, viewport.width / 390, viewport.height / 760);
     const box = await canvas.boundingBox();
+    assert.equal(bitmap.width * 760, bitmap.height * 390,
+      'Backing bitmap must keep the exact 390x760 logical aspect ratio');
+    assert(bitmap.width >= box.width * density - 0.1 && bitmap.height >= box.height * density - 0.1,
+      'Backing bitmap must cover the displayed size at device pixel density, including mobile enlargement');
+    assert(bitmap.width <= Math.max(390, box.width) * density + 39,
+      'Backing bitmap oversampling must stay bounded');
     for (const [name, expected] of Object.entries({ width: 390 * scale, height: 760 * scale,
       x: (viewport.width - 390 * scale) / 2, y: (viewport.height - 760 * scale) / 2 })) {
       assert(Math.abs(box[name] - expected) < 0.1, `Phone canvas must preserve its proportions and stay centered: ${name}`);
@@ -125,6 +130,16 @@ try {
   const desktopBox = await verifyPhone();
   const resizedBoard = await page.screenshot({ clip: { x: desktopBox.x, y: desktopBox.y + 64, width: 390, height: 400 } });
   assert(phoneBoard.equals(resizedBoard), 'Moving between phone and desktop browser sizes must preserve card layout and game state');
+  await page.setViewportSize({ width: 430, height: 932 });
+  await page.waitForTimeout(300);
+  const widePhone = await verifyPhone();
+  assert(Math.abs(widePhone.width - 430) < 0.1 && widePhone.x < 0.1,
+    'A tall 430px phone must fill its width without cropping or stretching the board');
+  await page.setViewportSize({ width: 600, height: 1200 });
+  await page.waitForTimeout(300);
+  const largePortrait = await verifyPhone();
+  assert(Math.abs(largePortrait.width - 600) < 0.1 && largePortrait.x < 0.1,
+    'A 600px portrait view must fill its width with a sharp, proportional backing bitmap');
   await page.setViewportSize({ width: 800, height: 400 });
   await page.waitForTimeout(300);
   await verifyPhone();
@@ -145,7 +160,7 @@ try {
   assert(beforeDraw.equals(undone), 'Undo must restore the exact rendered card board');
   if (option('--screenshot')) await page.screenshot({ path: option('--screenshot').replace(/\.png$/, '-game.png') });
   assert.equal(errors.length, 0, 'Runtime must start and respond without console/asset errors');
-  console.log(`Browser runtime passed: fixed 390x760 phone on desktop, portrait and landscape at ${pixelDensity}x pixel density (${locale}); resize preserves state; scaled input, stock draw and undo; source ${deployment.source_sha}`);
+  console.log(`Browser runtime passed: 390x760 logical phone, fixed desktop size and proportional mobile fit at ${pixelDensity}x pixel density (${locale}); resize preserves state; scaled input, stock draw and undo; source ${deployment.source_sha}`);
 } finally {
   await browser.close();
   if (server) await new Promise((done) => server.close(done));

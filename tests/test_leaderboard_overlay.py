@@ -262,6 +262,34 @@ func _run() -> void:
     observer._attach_page(page)
     observer._attach_page(page)
     _check(page._content.get_child_count() == 2, "My Page receives one web-owned button")
+    var previous_emulation: bool = Input.emulate_mouse_from_touch
+    Input.emulate_mouse_from_touch = false
+    var popup: PopupMenu = page.difficulty_choice.get_popup()
+    popup.about_to_popup.emit()
+    _check(Input.emulate_mouse_from_touch, "Open difficulty popup receives emulated mouse input from touch")
+    popup.about_to_popup.emit()
+    popup.popup_hide.emit()
+    _check(not Input.emulate_mouse_from_touch, "Closing even a repeatedly opened popup restores raw board touch input")
+    popup.about_to_popup.emit()
+    var mouse: InputEventMouseButton = InputEventMouseButton.new()
+    mouse.button_index = MOUSE_BUTTON_LEFT
+    mouse.pressed = true
+    Input.parse_input_event(mouse)
+    Input.flush_buffered_events()
+    popup.popup_hide.emit()
+    _check(Input.emulate_mouse_from_touch, "Outside-press dismissal waits for the emulated mouse release")
+    mouse = mouse.duplicate()
+    mouse.pressed = false
+    Input.parse_input_event(mouse)
+    Input.flush_buffered_events()
+    await process_frame
+    await process_frame
+    _check(not Input.emulate_mouse_from_touch and not observer.is_processing(), "Release restores raw touch and stops the temporary refresh loop")
+    Input.emulate_mouse_from_touch = true
+    popup.about_to_popup.emit()
+    popup.popup_hide.emit()
+    _check(Input.emulate_mouse_from_touch, "Popup close preserves a previously enabled emulation setting")
+    Input.emulate_mouse_from_touch = false
     var button: Button = page._content.get_node("WebLeaderboardProfile") as Button
     _check(button.text == "랭킹", "Korean My Page button uses the concise ranking label")
     button.emit_signal("pressed")
@@ -305,11 +333,19 @@ func _run() -> void:
     observer._profile_changed([])
     await process_frame
     _check(page.profile.player_name.text == "Player" and page.profile.connection.text == "Unavailable", "Deleting the web guest restores local profile labels")
+    popup.about_to_popup.emit()
     page.queue_free()
     await process_frame
+    _check(not Input.emulate_mouse_from_touch, "Freeing an open popup restores raw board touch input")
     _check(observer._pages.is_empty() and observer._queued_pages.is_empty(), "Freed My Pages leave no app-lifetime refresh observers")
+    var orphan: PopupMenu = PopupMenu.new()
+    root.add_child(orphan)
+    observer._popup_touch_started(orphan)
     observer.queue_free()
     await process_frame
+    _check(not Input.emulate_mouse_from_touch, "Removing the observer also restores the input setting")
+    orphan.queue_free()
+    Input.emulate_mouse_from_touch = previous_emulation
     print("Bridge lifecycle checks completed: failures=", failures)
     quit(1 if failures else 0)
 ''',

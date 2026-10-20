@@ -81,7 +81,9 @@ GitHub API가 dispatch를 거부하면 Worker는 502를 반환합니다. GitHub 
 
 - 원본 README, 설치 엔진과 공식 템플릿을 **Godot 4.7.2 stable**로 맞추고 공식 SHA256을 확인합니다. 원본 엔진 버전이 바뀌면 자동 배포를 중단하므로 `godot-version.json`을 검토해야 합니다.
 - GDScript·GL Compatibility를 사용하며 WebAssembly·WebGL 2가 필요합니다. 스레드·GDExtension을 끕니다.
-- 게임의 논리 화면은 원본의 기준인 **390×760**으로 고정합니다. PC에서는 중앙에 같은 크기로 표시하고, 더 작은 브라우저에서는 화면 전체의 표시 크기만 같은 비율로 줄입니다. 창 크기·화면 배율이 바뀌어도 카드·메뉴 배치는 바뀌지 않습니다. 고해상도 화면에서는 렌더링 픽셀 수만 화면 배율에 맞춥니다. 웹 전용 HTML shell과 export preset만 사용하며 원본 프로젝트 설정은 수정하지 않습니다.
+- 게임의 논리 화면은 원본의 기준인 **390×760**으로 고정합니다. PC에서는 중앙에 같은 크기로 표시합니다. 너비 600px 이하의 세로 창에서는 전체 보드가 들어오는 범위까지 같은 비율로 확대·축소하므로 430×932 같은 큰 휴대폰의 좌우 여백을 없앱니다. 더 짧거나 가로인 창에서는 보드 전체가 보이도록 축소합니다. 창 크기·화면 배율이 바뀌어도 카드·메뉴 배치는 바뀌지 않습니다. 캔버스 픽셀 수는 기기 화면 배율과 표시 확대 배율을 모두 반영하며, 39×76 픽셀 단위로 올림해 정확한 논리 화면비를 유지합니다. 웹 전용 HTML shell과 export preset만 사용하며 원본 프로젝트 설정은 수정하지 않습니다.
+- 넓은 데스크톱에서 세로 보드와 화면비가 다른 창의 모든 여백을 동시에 없앨 수는 없습니다. 현재 방식은 잘림·비율 왜곡을 피합니다. 데스크톱 전체 채우기는 별도의 반응형 UI 재배치가 필요한 선택이며 강제 적용하지 않습니다. 데스크톱에서도 좁은 세로 창은 동일한 모바일 표시 규칙을 사용합니다.
+- 원본은 보드의 중복 입력을 막기 위해 터치의 마우스 에뮬레이션을 끕니다. Godot 4.7.2의 embedded `PopupMenu`는 마우스/키보드로 항목을 선택·닫기 때문에, 웹 브리지는 마이페이지 난이도 팝업이 표시될 때만 에뮬레이션을 켭니다. 닫힘·페이지 해제 시 원래 설정으로 복원하며, 바깥 누름으로 닫은 경우 해당 누름의 해제까지 전달한 뒤 복원해 눌린 포인터가 남지 않게 합니다. 게임 규칙·통계 필터·원본 파일과 소스 호환성 가드는 변경하지 않습니다.
 - iOS 네이티브 설정·전환은 기존 Godot 폴백을 사용하고 Game Center는 사용할 수 없습니다. 네이티브 파일은 내보내지 않습니다.
 - 깨끗한 checkout의 CSV 번역과 글꼴을 생성하기 위해 임시 복사본에서 번역 참조를 잠시 비우고 import합니다. 이후 번역 참조를 복원하고 웹 전용 테마를 적용한 상태로 원본의 공식 전체 테스트를 실행합니다. 같은 테마로 Web Export하며 원본 checkout과 게임 코드·번역·씬·테스트는 바꾸지 않습니다.
 - `web/theme.tres`는 Arimo와 Noto Sans CJK를 묶고, Web의 `SystemFont`가 사용하는 기본 테마 글꼴도 지정합니다. Noto의 큰 기본 행 높이가 영어에도 적용되는 Godot 동작에 맞춰 `web/prepare_fonts.gd`에서 CJK의 행 상자를 1.25 em으로 설정하고, 일본어 버튼에는 글꼴의 비례 자간 기능 `palt`를 사용합니다. 글리프 크기와 다운로드한 폰트 데이터는 유지하며, 테스트의 최소 카드 공간 기준을 변경하지 않습니다.
@@ -153,11 +155,22 @@ node tests/leaderboard-ui-browser.mjs
 node tests/leaderboard-api-browser.mjs
 # 실제 Web Export의 마이페이지 연결 검사
 node tests/leaderboard-export-browser.mjs --directory /path/to/export
+# 실제 HTTP에서 터치/마우스 팝업·HTML 포커스 복귀·팝업 해제 후 보드 입력 검사
+node tests/profile-input-browser.mjs --directory /path/to/export --screenshots /tmp/profile-input
+# WebKit 모바일 에뮬레이션 (실제 iPhone/Android 실기기 검증과 구분)
+npx playwright install webkit
+node tests/profile-input-browser.mjs --browser webkit --directory /path/to/export --screenshots /tmp/profile-webkit
+# 배포본의 같은 결함 재현 (게스트 API 쓰기 없음)
+node tests/profile-input-browser.mjs --url https://neuma573.com/quiet-solitaire-web/
 ```
 
 `GODOT_BIN`을 설정하면 Python 검증에 실제 Godot 어댑터 수명주기 검사도 포함됩니다.
 브라우저 검사는 `CHROME_BIN`으로 설치된 Chromium 계열 브라우저를 지정할 수 있습니다.
 API 브라우저 검사는 실제 핸들러와 SQLite를 사용하지만 Cloudflare 런타임·배포 검사를 대신하지는 않습니다.
+`ci/**` 검증은 Linux에서 원본 테스트·export·Chromium 검사를 통과한 동일 공개 런타임을
+macOS로 가져와 WebKit의 터치·포커스·게임 입력을 검사합니다. Ubuntu WebKit에서는 모든 입력 assertion이
+통과한 뒤 `glBlitFramebuffer` 검증 오류가 수집되어 실패했으므로, Linux WebKit까지 검증됐다고 주장하지 않습니다.
+macOS WebKit 검사도 모든 콘솔·Godot·자산 오류를 실패로 처리하며 오류 예외 목록을 추가하지 않습니다.
 
 ## 로컬 빌드 검증
 

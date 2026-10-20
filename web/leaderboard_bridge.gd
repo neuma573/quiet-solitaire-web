@@ -15,8 +15,12 @@ var _game_root: Node
 var _attempt_id: String = ""
 var _started: bool = false
 var _completed: bool = false
+var _touch_popup: PopupMenu
+var _previous_mouse_emulation: bool = false
+var _popup_mouse_emulation: bool = false
 
 func _ready() -> void:
+	set_process(false)
 	if not OS.has_feature("web"):
 		return
 	_window = JavaScriptBridge.get_interface("window")
@@ -112,6 +116,12 @@ func _attach_page(page: Control) -> void:
 		push_warning("Web leaderboard My Page hooks are unavailable")
 		return
 	page.set_meta(WEB_PROFILE_META, true)
+	var choice: OptionButton = page.get("difficulty_choice") as OptionButton
+	if choice != null:
+		var popup: PopupMenu = choice.get_popup()
+		popup.about_to_popup.connect(_popup_touch_started.bind(popup))
+		popup.popup_hide.connect(_popup_touch_ended.bind(popup))
+		popup.tree_exiting.connect(_popup_touch_ended.bind(popup))
 	var reference: WeakRef = weakref(page)
 	_pages.append(reference)
 	var button: Button = Button.new()
@@ -145,6 +155,35 @@ func _attach_page(page: Control) -> void:
 		label.minimum_size_changed.connect(refresh)
 		label.draw.connect(refresh)
 	_refresh_page(weakref(page))
+
+func _popup_touch_started(popup: PopupMenu) -> void:
+	# Godot 4.7 PopupMenu selects/dismisses with mouse events. Keep the source's
+	# raw-touch board input unchanged; emulate only while this modal owns input.
+	if not _popup_mouse_emulation:
+		_previous_mouse_emulation = Input.emulate_mouse_from_touch
+		_popup_mouse_emulation = true
+	_touch_popup = popup
+	set_process(false)
+	Input.emulate_mouse_from_touch = true
+
+func _popup_touch_ended(popup: PopupMenu) -> void:
+	if _touch_popup != popup:
+		return
+	_touch_popup = null
+	_restore_popup_touch()
+
+func _restore_popup_touch() -> void:
+	# An outside press dismisses the popup before its release. Keep emulation
+	# through that release so Godot clears its emulated pointer and button mask.
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		set_process(true)
+		return
+	Input.emulate_mouse_from_touch = _previous_mouse_emulation
+	_popup_mouse_emulation = false
+	set_process(false)
+
+func _process(_delta: float) -> void:
+	_restore_popup_touch()
 
 func _detach_page(reference: WeakRef, service: Object, refresh: Callable) -> void:
 	var page: Control = reference.get_ref() as Control
@@ -217,5 +256,7 @@ func _notification(what: int) -> void:
 		_profile_changed([])
 
 func _exit_tree() -> void:
+	if _popup_mouse_emulation:
+		Input.emulate_mouse_from_touch = _previous_mouse_emulation
 	if _window != null and _profile_callback != null:
 		_window.removeEventListener("quiet-leaderboard-profile", _profile_callback)
