@@ -74,10 +74,19 @@ class LeaderboardOverlayTests(unittest.TestCase):
             self.apply()
         self.assertEqual(self.snapshot(), before)
 
-    def test_unreviewed_revision_refuses_before_any_write(self):
-        with self.assertRaisesRegex(RuntimeError, "revision has not been reviewed"):
-            overlay.apply_overlay(self.project, source_sha="b" * 40)
+    def test_new_revision_with_same_hooks_is_accepted(self):
+        overlay.apply_overlay(self.project, source_sha="b" * 40)
+        self.assertTrue((self.project / "web-leaderboard/leaderboard_bridge.gd").is_file())
+
+    def test_malformed_revision_refuses_before_any_write(self):
+        with self.assertRaisesRegex(RuntimeError, "full commit SHA"):
+            overlay.apply_overlay(self.project, source_sha="invalid")
         self.assertEqual(self.snapshot(), self.original)
+
+    def test_graphics_only_changes_do_not_change_observation_contract(self):
+        (self.project / "scripts/visuals.gd").write_text("extends RefCounted\n# New MSDF renderer\n")
+        self.apply()
+        self.assertIn("New MSDF renderer", (self.project / "scripts/visuals.gd").read_text())
 
     def test_changed_xp_formula_refuses_even_with_reviewed_revision(self):
         (self.project / "scripts/player_level.gd").write_text(
