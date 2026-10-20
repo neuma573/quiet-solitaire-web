@@ -208,6 +208,16 @@ test('nickname edits preserve identity and XP, and deletion cancels participatio
   assert.equal(calls.finishes.length, 0);
 });
 
+test('an uncertain deletion never triggers automatic guest recreation in the same page', async () => {
+  let connections = 0;
+  const { service } = fixture({ session: async () => { connections++; return { user }; },
+    remove: async () => { throw new LeaderboardError('연결할 수 없습니다.'); } });
+  await service.join(); await service.remove(); await service.join();
+  assert.equal(connections, 1);
+  assert.equal(service.participating, false); assert.equal(service.deleted, true);
+  assert.equal(service.state.error, '연결할 수 없습니다.');
+});
+
 test('only compatible cumulative XP rows are accepted and no public ID is required', async () => {
   const { service } = fixture({ board: async () => ({ metric: 'cumulative-xp', verification: 'client-reported', entries: [
     { rank: 1, nickname: '<img src=x onerror=alert(1)>', xp: 10, isMe: true, userId: 'not-public' },

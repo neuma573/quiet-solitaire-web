@@ -39,8 +39,8 @@ export function createLeaderboardClient({ apiBase, fetchImpl = globalThis.fetch,
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
     } catch { throw new LeaderboardError('연결할 수 없습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.'); }
     if (!response.ok) {
-      const messages = { 400: '입력값이나 게임 기록을 확인해 주세요.', 401: '게스트 연결이 만료되었습니다. 다시 참여해 주세요.',
-        403: '게스트 연결을 확인할 수 없습니다. 다시 참여해 주세요.', 409: '이 게임 기록은 이미 처리되었거나 만료되었습니다.',
+      const messages = { 400: '입력값이나 게임 기록을 확인해 주세요.', 401: '게스트 연결이 만료되었습니다. 페이지를 새로고침해 주세요.',
+        403: '게스트 연결을 확인할 수 없습니다. 페이지를 새로고침해 주세요.', 409: '이 게임 기록은 이미 처리되었거나 만료되었습니다.',
         410: '이 게임 기록은 만료되었습니다.', 429: '요청이 많습니다. 잠시 뒤 다시 시도해 주세요.' };
       // Never render arbitrary server/proxy error text, which may contain operational details.
       throw new LeaderboardError(messages[response.status] ?? '서버에 연결할 수 없습니다. 잠시 뒤 다시 시도해 주세요.', response.status);

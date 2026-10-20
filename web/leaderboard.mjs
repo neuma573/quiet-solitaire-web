@@ -29,7 +29,7 @@ export class LeaderboardService {
     const profile = copyProfile(user);
     if (!profile) throw new LeaderboardError('게스트 정보를 읽을 수 없습니다.');
     if (kind !== 'session' && this.profile) {
-      if (this.profile.id !== profile.id) throw new LeaderboardError('게스트 연결이 변경되었습니다. 다시 참여해 주세요.');
+      if (this.profile.id !== profile.id) throw new LeaderboardError('게스트 연결이 변경되었습니다. 페이지를 새로고침해 주세요.');
       profile.xp = Math.max(this.profile.xp, profile.xp);
       // A result response can predate a successful nickname edit, and XP responses can arrive out of order.
       if (kind === 'result') profile.nickname = this.profile.nickname;
@@ -83,7 +83,7 @@ export class LeaderboardService {
       if (this.epoch !== epoch || this.disposed) return;
       this.profile = null; this.state.entries = []; this.state.message = '공유 리더보드 기록을 삭제했습니다. 새로고침하면 새 고유 ID가 생성됩니다.';
       await this.refreshBoard();
-    } catch (error) { if (this.epoch === epoch) { this.deleted = false; this.state.error = error.message; } }
+    } catch (error) { if (this.epoch === epoch) this.state.error = error.message; }
     finally { if (this.epoch === epoch) { this.state.busy = false; this.changed(); } }
   }
   async refreshBoard() {
@@ -116,7 +116,7 @@ export class LeaderboardService {
     if (event.type === 'started') {
       if (this.seen.has(event.attemptId)) return;
       // Fail closed on a resumed/repeated attempt; this tab must observe its new start.
-      if (this.seen.size >= 1000) { this.leave(); this.state.error = '페이지를 새로고침한 뒤 다시 참여해 주세요.'; this.changed(); return; }
+      if (this.seen.size >= 1000) { this.leave(); this.state.error = '페이지를 새로고침해 주세요.'; this.changed(); return; }
       this.seen.add(event.attemptId);
       const active = { attemptId: event.attemptId, mode: { difficulty: event.mode.difficulty, draw: event.mode.draw,
         scoring: event.mode.scoring }, run: null, epoch: this.epoch };
