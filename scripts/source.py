@@ -73,7 +73,10 @@ def credentials():
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--directory", type=Path)
-    parser.add_argument("--fresh", help="Only deploy while this SHA is still main")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--fresh", help="Only deploy while this SHA is still main")
+    mode.add_argument("--validate", action="store_true",
+                      help="Check out current main even when that runtime is already deployed")
     args = parser.parse_args()
     with credentials() as env:
         remote = f"git@github.com:{SOURCE}.git"
@@ -86,13 +89,17 @@ def main() -> None:
             event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
             sha = requested_sha(event, os.environ["GITHUB_EVENT_NAME"]) or head
             deployed = {}
-            try:
-                with urllib.request.urlopen(PAGE + "deployment.json", timeout=30) as response:
-                    deployed = json.load(response)
-            except urllib.error.HTTPError as error:
-                if error.code != 404:
-                    raise
-            changed = should_build(deployed, sha, os.environ["GITHUB_SHA"])
+            # Validation is independent of publication deduplication: an already
+            # deployed runtime must still be available for manual core/full tests.
+            # The deploy workflow does not pass --validate and keeps its old gate.
+            if not args.validate:
+                try:
+                    with urllib.request.urlopen(PAGE + "deployment.json", timeout=30) as response:
+                        deployed = json.load(response)
+                except urllib.error.HTTPError as error:
+                    if error.code != 404:
+                        raise
+            changed = args.validate or should_build(deployed, sha, os.environ["GITHUB_SHA"])
             # Old queued events must never roll the live site back to an older source.
             changed = changed and sha == head
             if changed:
