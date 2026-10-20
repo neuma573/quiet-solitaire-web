@@ -149,6 +149,11 @@ node tests/leaderboard-page-browser.mjs --directory /path/to/export
 - 인게임 화면은 고유 ID·닉네임 변경·`나의 모든 기록 삭제`를 제공합니다. 삭제 확인 후 공유 리더보드의
   게스트·닉네임·XP·서버 기록을 삭제하며 기기의 게임 저장·통계는 유지합니다. 바로 새 게스트를 만들지 않고
   다음 페이지 로드에서 새 ID로 시작합니다. 순위의 `새로고침`은 기록 초기화가 아닙니다.
+- 마이페이지 진입은 닉네임 편집을 자동으로 시작하지 않습니다. 입력칸을 직접 탭하거나 Tab으로
+  이동하면 편집할 수 있고, 입력 글꼴은 모바일의 작은 입력칸 자동 확대를 피하도록 16px입니다.
+  게임 캔버스는 layout viewport로 배치하며 키보드·확대의 visual viewport 높이/오프셋을 버퍼에
+  반영하지 않습니다. 모달 안에서만 스크롤하고 닫기·Escape 후 기존 포커스를 스크롤 없이 복원합니다.
+  브라우저 확대 배율이나 viewport 확대 허용 설정을 강제로 변경하지 않습니다.
 - 서버의 지급량 계산·중복 지급 방지·기본 요청 제한은 포함하지만, 브라우저의 승리 보고 자체를
   증명하지는 않습니다. 결과는 클라이언트 신고 기록입니다. 상금이나 경쟁 대회의 검증 수단으로 사용할 수 없습니다.
 - 게임 연결은 7개 hook/XP 파일과 보정 후 `main.gd` 계약을 확인하고, 실제 계약이 맞지 않으면 빌드를 중단합니다.
@@ -165,6 +170,9 @@ node --test tests/*.test.mjs
 python3 -m unittest discover -s tests -v
 # Playwright 설치 후 선택적으로 실행 (모든 HTTPS 요청을 로컬에서 가로채며 외부 통신 없음)
 node tests/leaderboard-ui-browser.mjs
+node tests/profile-focus-browser.mjs
+# 같은 대표 포커스·키보드 배치 검사만 WebKit 모바일 에뮬레이션으로 실행
+node tests/profile-focus-browser.mjs --webkit
 node tests/leaderboard-api-browser.mjs
 # 실제 공개 compiled PCK의 26개 배치·흑백·긴 열·드래그/Undo 검사
 python3 scripts/check_responsive_layout.py --directory /path/to/export --godot /path/to/godot

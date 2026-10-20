@@ -35,13 +35,11 @@
     const phone = document.getElementById('phone');
     function fitPhone() {
       const density = window.devicePixelRatio || 1;
-      const viewport = window.visualViewport;
-      // Layout dimensions stay stable during pinch zoom. A visual viewport at
-      // scale 1 can still become shorter when browser controls or a keyboard open.
-      const visual = viewport && Math.abs(viewport.scale - 1) < 0.01 ? viewport : null;
+      // The dialog owns keyboard scrolling. Keep Godot in the layout viewport:
+      // keyboard/pinch metrics must not resize its buffer or leave a stale pan
+      // offset when iOS restores the visual viewport in a later scroll event.
       const width = document.documentElement.clientWidth || window.innerWidth;
-      const height = Math.min(document.documentElement.clientHeight || window.innerHeight,
-        visual?.height ?? Infinity);
+      const height = document.documentElement.clientHeight || window.innerHeight;
       const portrait = width <= 600 && height > width;
       const scale = Math.min(portrait ? Infinity : 1, width / 390, height / 760);
       let displayWidth = 390 * scale, displayHeight = 760 * scale;
@@ -64,12 +62,11 @@
       if (canvas.height !== pixelsHigh) canvas.height = pixelsHigh;
       phone.style.width = `${displayWidth}px`;
       phone.style.height = `${displayHeight}px`;
-      phone.style.left = `${(width - displayWidth) / 2 + (visual?.offsetLeft ?? 0)}px`;
-      phone.style.top = `${(height - displayHeight) / 2 + (visual?.offsetTop ?? 0)}px`;
+      phone.style.left = `${(width - displayWidth) / 2}px`;
+      phone.style.top = `${(height - displayHeight) / 2}px`;
     }
     fitPhone();
     window.addEventListener('resize', fitPhone);
-    window.visualViewport?.addEventListener('resize', fitPhone);
 
     const config = $GODOT_CONFIG;
     const engine = new Engine(config);

@@ -20,7 +20,7 @@
 .ql-identity { overflow-wrap: anywhere; color: #526457; font-size: 12px; }
 .ql-name-form { display: grid; grid-template-columns: 1fr auto; gap: 7px 8px; margin: 15px 0; }
 .ql-name-form label, .ql-name-form .ql-note { grid-column: 1 / -1; margin: 0; }
-.ql-name-form input { min-width: 0; width: 100%; padding: 8px 10px; border: 1px solid #a3b4a6; border-radius: 8px; background: white; color: #26382d; }
+.ql-name-form input { min-width: 0; width: 100%; padding: 8px 10px; border: 1px solid #a3b4a6; border-radius: 8px; background: white; color: #26382d; font-size: 16px; }
 .ql-name-form button { grid-column: 2; grid-row: 2; }
 .ql-dialog .ql-primary { background: #285b43; border-color: #285b43; color: white; }
 .ql-dialog .ql-danger { color: #873f2f; margin-top: 10px; }

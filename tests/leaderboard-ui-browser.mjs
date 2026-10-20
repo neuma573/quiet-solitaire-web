@@ -101,7 +101,8 @@ try {
   assert.equal(await page.getByRole('button', { name: '순위 · 마이페이지' }).evaluate(el => el === document.activeElement), true);
   await page.evaluate(() => window.QuietLeaderboardBridge.emit('{"type":"my-page"}'));
   await page.locator('.ql-dialog').waitFor({ state: 'visible' });
-  assert.equal(await name.evaluate(element => element === document.activeElement), true, 'Native My Page event must focus nickname');
+  assert.equal(await name.evaluate(element => element === document.activeElement), false, 'Native My Page navigation must not start editing');
+  assert.equal(await page.locator('.ql-close').evaluate(element => element === document.activeElement), true);
   if (process.env.LEADERBOARD_SCREENSHOT) await page.screenshot({ path: process.env.LEADERBOARD_SCREENSHOT.replace(/\.png$/, '-my-page.png') });
   const cachedPeer = await page.context().newPage();
   await cachedPeer.addInitScript(() => {
