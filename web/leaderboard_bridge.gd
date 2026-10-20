@@ -5,7 +5,10 @@ const GAME_SCRIPT: String = "res://scripts/main.gd"
 const PAGE_SCRIPT: String = "res://scripts/statistics_page.gd"
 const BOARD_SCRIPT: String = "res://scripts/board.gd"
 const PROFILE_SCRIPT: String = "res://scripts/profile_header.gd"
+const V = preload("res://scripts/visuals.gd")
 const WEB_PROFILE_META: StringName = &"quiet_web_leaderboard_profile"
+const WEB_LAYOUT_META: StringName = &"quiet_web_board_layout"
+const MIN_HEADER_CSS: float = 14.0
 
 var _window: JavaScriptObject
 var _profile_callback: JavaScriptObject
@@ -18,6 +21,7 @@ var _completed: bool = false
 var _touch_popup: PopupMenu
 var _previous_mouse_emulation: bool = false
 var _popup_mouse_emulation: bool = false
+var _board_layout_queued: bool = false
 
 func _ready() -> void:
 	set_process(false)
@@ -67,6 +71,46 @@ func _attach_game(root: Node) -> void:
 	_attempt_id = ""
 	board.connect("action_committed", _action_committed.bind(root))
 	root.tree_exiting.connect(_game_exiting.bind(root))
+	if _window != null and root is Control and board is Control:
+		board.set_meta(WEB_LAYOUT_META, {"flags": board.size_flags_horizontal,
+			"minimum": board.custom_minimum_size})
+		root.resized.connect(_queue_board_layout)
+		board.resized.connect(_queue_board_layout)
+		_queue_board_layout()
+
+func _queue_board_layout() -> void:
+	if not _board_layout_queued:
+		_board_layout_queued = true
+		_fit_board.call_deferred()
+
+func _fit_board() -> void:
+	_board_layout_queued = false
+	var root: Control = _game_root as Control
+	if root == null or not root.is_inside_tree():
+		return
+	var board: Control = root.get("board") as Control
+	var parent: Control = board.get_parent() as Control
+	var original: Dictionary = board.get_meta(WEB_LAYOUT_META)
+	var canvas: JavaScriptObject = _window.document.getElementById("canvas")
+	var rect: JavaScriptObject = canvas.getBoundingClientRect()
+	var scale: float = board.get_viewport().get_screen_transform().y.length() * float(rect.height) / float(canvas.height)
+	var limit: float = parent.size.x
+	if _window.document.documentElement.clientWidth <= 600 and rect.height > rect.width and scale > 0.0:
+		limit = board_width_limit(board.size.y, parent.size.x, scale)
+	var capped: bool = limit < parent.size.x - 0.5
+	board.size_flags_horizontal = Control.SIZE_SHRINK_CENTER if capped else original.flags
+	var minimum: Vector2 = original.minimum
+	if capped:
+		minimum.x = limit
+	if not board.custom_minimum_size.is_equal_approx(minimum):
+		board.custom_minimum_size = minimum
+
+static func board_width_limit(height: float, available_width: float, css_scale: float) -> float:
+	# A legal column can have six hidden cards below thirteen exposed ranks.
+	# The source's compressed spacing leaves at least available/15 per rank.
+	var card_width: float = (height - V.BOARD_ROW_GAP - 15.0 * MIN_HEADER_CSS / css_scale) / (2.0 * V.CARD_ASPECT_RATIO)
+	var baseline: float = minf(available_width, 390.0 - 2.0 * V.GAME_SIDE_MARGIN)
+	return floorf(clampf(7.0 * card_width + 6.0 * V.GAP, baseline, available_width))
 
 func _action_committed(root: Node) -> void:
 	if root != _game_root or not is_instance_valid(root):

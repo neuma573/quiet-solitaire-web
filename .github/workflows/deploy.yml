@@ -42,6 +42,9 @@ jobs:
       - name: Run source regression suite and export single-thread release
         if: steps.source.outputs.changed == 'true'
         run: python3 scripts/build.py --source "$RUNNER_TEMP/private-source" --output "$RUNNER_TEMP/site"
+      - name: Verify compiled responsive layout and longest playable columns
+        if: steps.source.outputs.changed == 'true'
+        run: python3 scripts/check_responsive_layout.py --directory "$RUNNER_TEMP/site"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         if: steps.source.outputs.changed == 'true'
         with:

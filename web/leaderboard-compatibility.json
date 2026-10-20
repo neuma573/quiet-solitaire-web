@@ -8,6 +8,7 @@
     "scripts/profile_header.gd": "12864a15034694e1e52a3ce7132bf2836dc8ba7ee85018053b93d720d5c3580b",
     "scripts/klondike.gd": "4d89e9f1a14ceb8b7f7de5ee35e7313ddfba937769374791fefe901019bf3cda",
     "scripts/player_level.gd": "c55b2f70478488b8da5e4f94f1f76804156964f8e6158457ed87f3d380ea8c63",
-    "scripts/klondike_statistics.gd": "047e384c672f66f990511a2774538a1b84a44fac089b7598768f04c9bf781470"
+    "scripts/klondike_statistics.gd": "047e384c672f66f990511a2774538a1b84a44fac089b7598768f04c9bf781470",
+    "scripts/visuals.gd": "5e3ffa529c2748ab7656b77dcc3ce51c967124e66a9a3ed05af549a8aad7b8f2"
   }
 }

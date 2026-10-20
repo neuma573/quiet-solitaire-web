@@ -138,6 +138,12 @@ class LeaderboardBridgeTests(unittest.TestCase):
         # Independent fake game nodes exercise observer behavior without copying upstream source.
         files = {
             "project.godot": 'config_version=5\n[application]\nconfig/name="Bridge fixture"\n',
+            "scripts/visuals.gd": '''extends RefCounted
+const BOARD_ROW_GAP: float = 36.0
+const CARD_ASPECT_RATIO: float = 1.48
+const GAME_SIDE_MARGIN: float = 8.0
+const GAP: float = 2.0
+''',
             "scripts/model.gd": '''extends RefCounted
 var difficulty: String = "normal"
 var draw_count: int = 3
