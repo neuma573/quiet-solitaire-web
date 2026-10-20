@@ -2,7 +2,10 @@ name: Check deployment configuration
 on:
   pull_request:
   push:
-    branches: [main, 'ci/**']
+    branches: [main]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -19,6 +22,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
+          cache: npm
       - name: Test webhook and isolated leaderboard
         run: node --test tests/*.test.mjs
       - name: Install locked browser verification dependencies
@@ -30,8 +34,8 @@ jobs:
           node tests/leaderboard-page-browser.mjs --screenshots "$RUNNER_TEMP/leaderboard-page"
           node tests/leaderboard-ui-browser.mjs
           node tests/leaderboard-api-browser.mjs
-      - name: Retain leaderboard page screenshots
-        if: always()
+      - name: Retain failed leaderboard page screenshots only
+        if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: leaderboard-page-${{ github.sha }}
