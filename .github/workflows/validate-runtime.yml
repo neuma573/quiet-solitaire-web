@@ -33,7 +33,7 @@ jobs:
         id: source
         env:
           SOURCE_DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
-        run: python3 scripts/source.py --directory "$RUNNER_TEMP/private-source"
+        run: python3 scripts/source.py --validate --directory "$RUNNER_TEMP/private-source"
       - name: Require a checked out source for validation
         run: test '${{ steps.source.outputs.changed }}' = 'true'
       - name: Install checksum-verified Godot and Web templates

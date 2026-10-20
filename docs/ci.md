@@ -36,7 +36,10 @@ No deploy is initiated by this CI change's branch or PR.
 
 In Actions, select **Validate guarded Web runtime → Run workflow → regression:
 full** on the desired branch/ref (available after this workflow is on main).
-The default is `core`. Full additionally runs both original density smokes,
+The default is `core`. Validation uses `source.py --validate` to check out the
+current source main even when the same source/web SHA is already deployed;
+publication deduplication and freshness remain unchanged in deploy. Full
+additionally runs both original density smokes,
 compiled My Page/guest API integration, all eight native popup journeys, all 44
 light/dark viewport combinations and the follow-up macOS WebKit matrix against
 the exact audited Linux artifact. The original full scripts remain unchanged.
@@ -79,7 +82,8 @@ on PR18 `fd56e62669d66536d09de2c09fef923b19a9abf3`, Ubuntu 24.04:
 | Eight popup journeys and 44 viewport renders | 554 |
 | Runtime job including setup/upload/cleanup | 902 |
 
-The baseline runtime artifact was 38,192,297 bytes compressed; its 116 PNGs and
+The baseline runtime artifact was 38,192,297 bytes compressed; its 162 diagnostic
+PNGs (including 116 popup captures) and
 subsequent WebKit artifact (9,496,041 bytes) are absent from successful core runs.
 The baseline popup script has approximately 145 seconds of unconditional waits
 and over 360 capture operations. Full keeps that historical diagnostic matrix.
