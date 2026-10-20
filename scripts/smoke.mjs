@@ -67,18 +67,28 @@ try {
     const bitmap = await canvas.evaluate((element) => ({ width: element.width, height: element.height }));
     const density = await page.evaluate(() => window.devicePixelRatio);
     const viewport = page.viewportSize();
-    const maximum = viewport.width <= 600 && viewport.height > viewport.width ? Infinity : 1;
-    const scale = Math.min(maximum, viewport.width / 390, viewport.height / 760);
+    const portrait = viewport.width <= 600 && viewport.height > viewport.width;
+    const scale = Math.min(1, viewport.width / 390, viewport.height / 760);
     const box = await canvas.boundingBox();
-    assert.equal(bitmap.width * 760, bitmap.height * 390,
-      'Backing bitmap must keep the exact 390x760 logical aspect ratio');
+    assert(Math.abs(bitmap.width / bitmap.height - box.width / box.height) < 0.0001,
+      'CSS and backing bitmap must have the same aspect ratio without stretch');
     assert(bitmap.width >= box.width * density - 0.1 && bitmap.height >= box.height * density - 0.1,
-      'Backing bitmap must cover the displayed size at device pixel density, including mobile enlargement');
-    assert(bitmap.width <= Math.max(390, box.width) * density + 39,
+      'Backing bitmap must cover the displayed size at device pixel density');
+    assert(bitmap.width <= (portrait ? box.width * density + 1 : Math.max(390, box.width) * density + 39),
       'Backing bitmap oversampling must stay bounded');
-    for (const [name, expected] of Object.entries({ width: 390 * scale, height: 760 * scale,
-      x: (viewport.width - 390 * scale) / 2, y: (viewport.height - 760 * scale) / 2 })) {
-      assert(Math.abs(box[name] - expected) < 0.1, `Phone canvas must preserve its proportions and stay centered: ${name}`);
+    if (portrait) {
+      assert(Math.abs(box.width - viewport.width) < 0.1 && Math.abs(box.x) < 0.1,
+        'Portrait canvas must fill the actual viewport width');
+      assert(box.height <= viewport.height + 0.1 && box.height >= viewport.height - 1 / density - 0.1,
+        'Portrait canvas must fit the complete available height within one device pixel');
+      assert(Math.abs(box.y - (viewport.height - box.height) / 2) < 0.1,
+        'Pixel rounding may only leave a centered vertical fraction');
+    } else {
+      assert.equal(bitmap.width * 760, bitmap.height * 390, 'Desktop and landscape retain the original game aspect ratio');
+      for (const [name, expected] of Object.entries({ width: 390 * scale, height: 760 * scale,
+        x: (viewport.width - 390 * scale) / 2, y: (viewport.height - 760 * scale) / 2 })) {
+        assert(Math.abs(box[name] - expected) < 0.1, `Desktop canvas preserves its proportions and stays centered: ${name}`);
+      }
     }
     return box;
   }
@@ -130,6 +140,16 @@ try {
   const desktopBox = await verifyPhone();
   const resizedBoard = await page.screenshot({ clip: { x: desktopBox.x, y: desktopBox.y + 64, width: 390, height: 400 } });
   assert(phoneBoard.equals(resizedBoard), 'Moving between phone and desktop browser sizes must preserve card layout and game state');
+  for (const viewport of [{ width: 390, height: 664 }, { width: 600, height: 601 }]) {
+    await page.setViewportSize(viewport);
+    await page.waitForTimeout(300);
+    await verifyPhone();
+    await page.setViewportSize({ width: 390, height: 760 });
+    await page.waitForTimeout(300);
+    await verifyPhone();
+    const restored = await page.screenshot({ clip: { x: 0, y: 64, width: 390, height: 400 } });
+    assert(phoneBoard.equals(restored), `Responsive reflow at ${viewport.width}x${viewport.height} must preserve the game when returning`);
+  }
   await page.setViewportSize({ width: 430, height: 932 });
   await page.waitForTimeout(300);
   const widePhone = await verifyPhone();
@@ -160,7 +180,7 @@ try {
   assert(beforeDraw.equals(undone), 'Undo must restore the exact rendered card board');
   if (option('--screenshot')) await page.screenshot({ path: option('--screenshot').replace(/\.png$/, '-game.png') });
   assert.equal(errors.length, 0, 'Runtime must start and respond without console/asset errors');
-  console.log(`Browser runtime passed: 390x760 logical phone, fixed desktop size and proportional mobile fit at ${pixelDensity}x pixel density (${locale}); resize preserves state; scaled input, stock draw and undo; source ${deployment.source_sha}`);
+  console.log(`Browser runtime passed: fixed desktop, full-width responsive portrait at ${pixelDensity}x pixel density (${locale}); reflow preserves state; scaled input, stock draw and undo; source ${deployment.source_sha}`);
 } finally {
   await browser.close();
   if (server) await new Promise((done) => server.close(done));

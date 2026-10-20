@@ -103,7 +103,7 @@ try {
   await page.goto(origin + prefix, { waitUntil: 'load', timeout: 120_000 });
   await page.waitForFunction(() => !document.getElementById('status') && !!window.QuietLeaderboardBridge, null, { timeout: 120_000 });
   // Match the game's existing browser smoke: engine readiness precedes native menu input readiness.
-  await page.waitForTimeout(2500);
+  await page.waitForTimeout(3500);
   const canvas = page.locator('#canvas');
   assert.ok(await canvas.isVisible(), 'Compiled game canvas must be visible');
   assert.equal(await page.locator('.ql-launcher').isVisible(), false, 'Actual game must not have a floating launcher covering native counters');
