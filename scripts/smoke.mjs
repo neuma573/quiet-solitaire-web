@@ -174,6 +174,14 @@ try {
   await page.waitForTimeout(600);
   const drawn = await page.screenshot({ clip: boardClip });
   assert(!beforeDraw.equals(drawn), 'Drawing from stock must change the card board');
+  await page.setViewportSize({ width: 390, height: 664 });
+  await page.waitForTimeout(300);
+  await verifyPhone();
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.waitForTimeout(300);
+  await verifyPhone();
+  assert(drawn.equals(await page.screenshot({ clip: boardClip })),
+    'Responsive reflow with a pending Undo must preserve the drawn state');
   await click(154, 724);
   await page.waitForTimeout(600);
   const undone = await page.screenshot({ clip: boardClip });
