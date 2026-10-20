@@ -149,6 +149,36 @@ test('nickname normalization rejects markup and invisible controls while preserv
   assert.equal(changed.data.user.nickname, '새로운 이름');
 });
 
+test('matching automatic names keep separate identities and saved names survive session restoration', async t => {
+  const f = fixture(); t.after(() => f.sqlite.close());
+  const originalRandom = crypto.getRandomValues.bind(crypto);
+  let nameIndex = 0;
+  t.mock.method(crypto, 'getRandomValues', array => {
+    if (array instanceof Uint32Array && array.length === 3) return array.fill(nameIndex);
+    return originalRandom(array); // Bearer and CSRF randomness stays independent.
+  });
+  const first = await f.guest(), second = await f.guest();
+  assert.equal(first.user.nickname, '예쁜 고양이000');
+  assert.equal(second.user.nickname, first.user.nickname);
+  assert.notEqual(first.user.id, second.user.id);
+  assert.notEqual(first.cookie, second.cookie);
+  nameIndex = 0xffffffff; // A fresh name would now differ; restores must never reroll.
+  for (const nickname of ['내가 저장한 이름', 'API 점검']) {
+    const saved = await f.request('/v1/me', { method: 'PATCH', identity: first, body: { nickname } });
+    assert.equal(saved.response.status, 200);
+    assert.deepEqual(saved.data.user, { ...first.user, nickname });
+    const restored = await f.request('/v1/session', { method: 'POST', identity: first, body: {} });
+    assert.equal(restored.response.status, 200);
+    assert.deepEqual(restored.data.user, saved.data.user);
+    const refreshed = await f.request('/v1/me', { identity: first });
+    assert.deepEqual(refreshed.data.user, saved.data.user);
+  }
+  const otherRestored = await f.request('/v1/session', { method: 'POST', identity: second, body: {} });
+  assert.deepEqual(otherRestored.data.user, second.user);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS count FROM guests').get().count, 2);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS count FROM sessions').get().count, 2);
+});
+
 test('IP guest creation and identity nickname limits cannot be bypassed with client identity fields', async t => {
   const f = fixture(); t.after(() => f.sqlite.close());
   const guest = await f.guest();

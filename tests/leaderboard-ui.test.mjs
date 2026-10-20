@@ -10,6 +10,10 @@ const started = (id = attemptId, rules = mode) => ({ type: 'started', attemptId:
 const completed = (id = attemptId, overrides = {}) => ({ type: 'completed', attemptId: id, mode,
   elapsedMs: 125_000, moves: 110, won: true, score: 1020, ...overrides });
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
+function guestLifecycle() {
+  const values = new Map();
+  return { generation: '', storage: { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, String(value)) } };
+}
 function fixture(overrides = {}) {
   const calls = { starts: [], finishes: [], renames: [], removals: 0 };
   const client = { enabled: true, session: async () => ({ user }),
@@ -35,7 +39,9 @@ test('public API configuration is disabled by default and allows only HTTPS or l
 
 test('API uses server cookie and in-memory CSRF, never sends profile IDs or local XP', async () => {
   const requests = [];
-  const client = createLeaderboardClient({ apiBase: 'https://game.example/api/leaderboard', fetchImpl: async (url, options) => {
+  const client = createLeaderboardClient({ apiBase: 'https://game.example/api/leaderboard',
+    guestLifecycle: guestLifecycle(),
+    locks: { request: async (_name, _options, action) => action() }, fetchImpl: async (url, options) => {
     requests.push({ url, ...options });
     return new Response(JSON.stringify({ user, csrfToken: 'server-csrf' }), { status: 200 });
   } });
@@ -44,13 +50,17 @@ test('API uses server cookie and in-memory CSRF, never sends profile IDs or loca
   assert.equal(requests[0].headers['X-CSRF-Token'], undefined);
   for (const request of requests) {
     assert.equal(request.credentials, 'include'); assert.equal(request.cache, 'no-store');
-    assert.equal(request.headers.Authorization, undefined); assert.equal(JSON.parse(request.body).userId, undefined);
-    assert.equal(JSON.parse(request.body).xp, undefined);
+    assert.equal(request.headers.Authorization, undefined);
+    if (request.body !== undefined) {
+      assert.equal(JSON.parse(request.body).userId, undefined); assert.equal(JSON.parse(request.body).xp, undefined);
+    }
   }
-  assert.equal(requests[1].headers['X-CSRF-Token'], 'server-csrf');
-  assert.deepEqual(JSON.parse(requests[1].body), { nickname: '새 이름' });
-  assert.equal(requests[3].url, 'https://game.example/api/leaderboard/v1/runs/server%2Frun/result');
-  assert.equal(requests[3].headers['Idempotency-Key'], 'key');
+  assert.equal(requests[1].method, 'GET');
+  assert.equal(requests[1].headers['X-CSRF-Token'], undefined);
+  assert.equal(requests[2].headers['X-CSRF-Token'], 'server-csrf');
+  assert.deepEqual(JSON.parse(requests[2].body), { nickname: '새 이름' });
+  assert.equal(requests[4].url, 'https://game.example/api/leaderboard/v1/runs/server%2Frun/result');
+  assert.equal(requests[4].headers['Idempotency-Key'], 'key');
 });
 
 test('API errors are bounded user messages, never reflected backend content', async () => {
@@ -60,6 +70,112 @@ test('API errors are bounded user messages, never reflected backend content', as
   await assert.rejects(offline.board(), error => error.status === 0 && !error.message.includes('private'));
 });
 
+test('concurrent connections share one session request and verify the cookie before accepting identity', async () => {
+  const response = deferred(); const calls = [];
+  const client = createLeaderboardClient({ apiBase: 'https://api.example',
+    guestLifecycle: guestLifecycle(),
+    locks: { request: async (_name, options, action) => { assert.equal(options.mode, 'exclusive'); return action(); } },
+    fetchImpl: async (url, options) => {
+      calls.push({ url, ...options });
+      if (url.endsWith('/session')) return response.promise;
+      return Response.json({ user, csrfToken: 'cookie-owned-csrf' });
+    } });
+  const first = client.session(), second = client.session();
+  assert.equal(calls.length, 1);
+  response.resolve(Response.json({ user, csrfToken: 'cookie-owned-csrf' }, { status: 201 }));
+  assert.deepEqual(await first, await second);
+  assert.deepEqual(calls.map(call => call.method), ['POST', 'GET']);
+  assert.ok(calls.every(call => call.credentials === 'include' && call.signal instanceof AbortSignal));
+  await client.rename('새 이름');
+  assert.equal(calls[2].headers['X-CSRF-Token'], 'cookie-owned-csrf');
+});
+
+test('blocked cookies and unavailable locks fail without accepting identity or silently repeating creates', async () => {
+  let calls = 0;
+  const client = createLeaderboardClient({ apiBase: 'https://api.example',
+    guestLifecycle: guestLifecycle(),
+    locks: { request: async (_name, _options, action) => action() },
+    fetchImpl: async (_url, options) => {
+      calls++;
+      return options.method === 'POST' ? Response.json({ user, csrfToken: 'unpersisted-csrf' }, { status: 201 })
+        : Response.json({ error: 'session_required' }, { status: 401 });
+    } });
+  await assert.rejects(client.session(), error => error.reason === 'cookie_unavailable');
+  await assert.rejects(client.session(), error => error.reason === 'cookie_unavailable');
+  await new Promise(done => setImmediate(done));
+  assert.equal(calls, 2, 'One create followed by one cookie check; no retry loop');
+  const unavailable = createLeaderboardClient({ apiBase: 'https://api.example', locks: null,
+    fetchImpl: async () => { throw new Error('must not send a request'); } });
+  await assert.rejects(unavailable.session(), error => error instanceof LeaderboardError && /브라우저/.test(error.message));
+});
+
+test('cookie and ambiguous session failures stay blocked across refresh and suspension for this lifecycle', async () => {
+  for (const reason of ['cookie_unavailable', 'session_unconfirmed']) {
+    let connections = 0;
+    const error = new LeaderboardError('페이지를 새로고침해 주세요.'); error.reason = reason;
+    const { service } = fixture({ session: async () => { connections++; throw error; } });
+    await service.join(); await service.join(); service.leave(); await service.join();
+    assert.equal(connections, 1); assert.equal(service.connectionBlocked, true);
+    assert.equal(service.profile, null); assert.equal(service.participating, false);
+  }
+});
+
+test('unconfirmed creation or verification never repeats a potentially committed session POST', async () => {
+  for (const phase of ['post-network', 'post-503', 'post-json', 'verify-network', 'verify-503', 'verify-429']) {
+    let creates = 0;
+    const client = createLeaderboardClient({ apiBase: 'https://api.example', guestLifecycle: guestLifecycle(),
+      locks: { request: async (_name, _options, action) => action() }, fetchImpl: async (_url, options) => {
+        if (options.method === 'POST') {
+          creates++; // The server may already have committed this guest.
+          if (phase === 'post-network') throw new TypeError('response lost before Set-Cookie');
+          if (phase === 'post-503') return new Response('', { status: 503 });
+          if (phase === 'post-json') return new Response('truncated JSON');
+          return Response.json({ user, csrfToken: 'unverified-csrf' }, { status: 201 });
+        }
+        if (phase === 'verify-network') throw new TypeError('verification response lost');
+        return new Response('', { status: phase === 'verify-429' ? 429 : 503 });
+      } });
+    const concurrent = await Promise.allSettled([client.session(), client.session()]);
+    assert.ok(concurrent.every(result => result.status === 'rejected' && result.reason.reason === 'session_unconfirmed'), phase);
+    await assert.rejects(client.session(), error => error.reason === 'session_unconfirmed');
+    assert.equal(creates, 1, phase);
+  }
+});
+
+test('a known rejected session POST can retry without accepting an unverified identity', async () => {
+  let posts = 0;
+  const client = createLeaderboardClient({ apiBase: 'https://api.example', guestLifecycle: guestLifecycle(),
+    locks: { request: async (_name, _options, action) => action() }, fetchImpl: async (_url, options) => {
+      if (options.method === 'POST' && ++posts === 1) return new Response('', { status: 429 });
+      return Response.json({ user, csrfToken: 'verified-csrf' });
+    } });
+  await assert.rejects(client.session(), error => error.status === 429);
+  assert.deepEqual((await client.session()).user, user);
+  assert.equal(posts, 2);
+});
+
+test('automatic connection failure keeps game events local and can recover only for a new attempt', async () => {
+  let connects = 0; const pending = deferred();
+  const { service, client, calls } = fixture({ session: () => { connects++; return pending.promise; } });
+  const first = service.join(), repeated = service.join();
+  assert.equal(connects, 1);
+  await service.event(started()); await service.event(completed());
+  pending.reject(new LeaderboardError('연결할 수 없습니다.'));
+  await Promise.all([first, repeated]);
+  assert.equal(service.state.busy, false); assert.equal(service.profile, null);
+  await service.refreshBoard();
+  assert.equal(service.state.connectionError, '연결할 수 없습니다.', 'A successful public board read must not hide connection failure');
+  assert.equal(calls.starts.length, 0); assert.equal(calls.finishes.length, 0);
+  client.session = async () => ({ user });
+  await service.join(); await service.event(completed());
+  assert.equal(calls.finishes.length, 0, 'A later connection cannot upload an old completion');
+  await service.event(started('b'.repeat(32))); await service.event(completed('b'.repeat(32)));
+  assert.equal(calls.finishes.length, 1);
+  await service.remove(); await service.join();
+  assert.equal(service.profile, null, 'Confirmed deletion remains deleted until a new page lifecycle');
+  assert.equal(service.deleted, true);
+});
+
 test('nickname normalizes before sending and rejects markup, controls, emoji, invalid lengths', () => {
   assert.equal(normalizeNickname('  ＡＡ   여우  '), 'AA 여우');
   for (const value of ['a', '<img src=x>', 'x\ny', '친구😀', 'ab\u202ecd', '가'.repeat(21), '___', '--', '\u0300\u0301', null, {}]) {
@@ -67,7 +183,7 @@ test('nickname normalizes before sending and rejects markup, controls, emoji, in
   }
 });
 
-test('explicit participation required; no historical completion or resumed attempt is uploaded', async () => {
+test('cookie connection must complete before new runs; historical and resumed completions stay excluded', async () => {
   const { service, calls } = fixture();
   await service.event(started()); await service.event(completed());
   assert.equal(calls.starts.length, 0); assert.equal(calls.finishes.length, 0);
@@ -97,7 +213,7 @@ test('late start response, cancellation, mismatched modes and unsupported modes 
   assert.equal(normal.calls.finishes.length, 0);
 });
 
-test('leaving while session or run creation is in flight never opts in or resumes later', async () => {
+test('suspending while session or run creation is in flight never reconnects a stale lifecycle or run', async () => {
   const session = deferred(); const first = fixture({ session: () => session.promise });
   const joining = first.service.join(); first.service.leave(); session.resolve({ user }); await joining;
   assert.equal(first.service.participating, false); assert.equal(first.service.profile, null);
@@ -143,6 +259,16 @@ test('nickname edits preserve identity and XP, and deletion cancels participatio
   await service.event(started()); await service.remove(); await service.event(completed());
   assert.equal(service.profile, null); assert.equal(service.participating, false); assert.equal(calls.removals, 1);
   assert.equal(calls.finishes.length, 0);
+});
+
+test('an uncertain deletion never triggers automatic guest recreation in the same page', async () => {
+  let connections = 0;
+  const { service } = fixture({ session: async () => { connections++; return { user }; },
+    remove: async () => { throw new LeaderboardError('연결할 수 없습니다.'); } });
+  await service.join(); await service.remove(); await service.join();
+  assert.equal(connections, 1);
+  assert.equal(service.participating, false); assert.equal(service.deleted, true);
+  assert.equal(service.state.error, '연결할 수 없습니다.');
 });
 
 test('only compatible cumulative XP rows are accepted and no public ID is required', async () => {

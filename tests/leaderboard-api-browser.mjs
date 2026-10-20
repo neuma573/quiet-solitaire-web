@@ -32,6 +32,7 @@ const env = { DB, ALLOWED_ORIGIN: origin, API_PREFIX: '/api', RATE_LIMIT_SALT: '
 let time = Date.now();
 const failures = [];
 const apiRequests = [];
+let lostResponsePath = '';
 async function routeAll(route) {
   const request = route.request();
   try {
@@ -51,6 +52,9 @@ async function routeAll(route) {
     const init = { method: request.method(), headers };
     if (!['GET', 'HEAD'].includes(init.method) && request.postData() !== null) init.body = request.postData();
     const response = await handle(new Request(request.url(), init), env, () => time);
+    // Commit through the real handler, then lose the response before the
+    // browser receives headers/cookie. This must not cause another INSERT.
+    if (url.pathname === lostResponsePath) return route.abort('connectionfailed');
     await route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: await response.text() });
   } catch (error) {
     failures.push(error.message);
@@ -69,7 +73,14 @@ try {
     page.on('pageerror', error => failures.push(error.message));
     await page.goto(origin + '/'); await page.waitForFunction(() => window.ready);
   }
-  const guestA = await pageA.evaluate(() => window.client.session());
+  const sameBrowserTab = await contextA.newPage();
+  sameBrowserTab.on('pageerror', error => failures.push(error.message));
+  await sameBrowserTab.goto(origin + '/'); await sameBrowserTab.waitForFunction(() => window.ready);
+  const [guestA, concurrentGuest] = await Promise.all([
+    pageA.evaluate(() => window.client.session()), sameBrowserTab.evaluate(() => window.client.session()),
+  ]);
+  assert.equal(concurrentGuest.user.id, guestA.user.id, 'Concurrent tabs share one cookie-owned identity');
+  assert.equal(sqlite.prepare('SELECT count(*) AS n FROM guests').get().n, 1, 'Web Locks prevent concurrent first-load duplicate guests');
   const cookies = await contextA.cookies(apiOrigin);
   const bearer = cookies.find(cookie => cookie.name === '__Host-quiet_guest');
   assert.ok(bearer, 'Browser must accept actual secure Set-Cookie from handler');
@@ -108,10 +119,38 @@ try {
   assert.equal(deletedStatus, 401);
   const afterDeleteB = await pageB.evaluate(() => window.client.board());
   assert.deepEqual(afterDeleteB.entries.map(row => [row.rank, row.xp, row.isMe]), [[1, 300, true]]);
+  const staleStatus = await sameBrowserTab.evaluate(async () => {
+    try { await window.client.session(); return 'connected'; } catch (error) { return error.reason; }
+  });
+  assert.equal(staleStatus, 'guest_deleted', 'A pre-deletion tab cannot recreate the deleted guest on restore');
   for (const table of ['guests', 'sessions', 'runs', 'results'])
     assert.equal(sqlite.prepare(`SELECT count(*) AS n FROM ${table}`).get().n, 1, `Delete must preserve only other guest's ${table}`);
   assert.ok(apiRequests.some(request => request.hasCookie && request.method === 'POST' && request.path === '/api/v1/runs'));
+  for (const path of ['/api/v1/session', '/api/v1/me']) {
+    lostResponsePath = path;
+    const isolated = await browser.newContext();
+    await isolated.route('**/*', routeAll);
+    const lost = await isolated.newPage();
+    lost.on('pageerror', error => failures.push(error.message));
+    await lost.goto(origin + '/'); await lost.waitForFunction(() => window.ready);
+    const guestsBefore = sqlite.prepare('SELECT count(*) AS n FROM guests').get().n;
+    const postsBefore = apiRequests.filter(r => r.path === '/api/v1/session').length;
+    const outcomes = await lost.evaluate(async () => {
+      const results = [];
+      for (let i = 0; i < 4; i++) {
+        try { await window.client.session(); results.push('connected'); }
+        catch (error) { results.push(error.reason); }
+      }
+      return results;
+    });
+    assert.equal(sqlite.prepare('SELECT count(*) AS n FROM guests').get().n, guestsBefore + 1,
+      'The committed guest remains one even when the creation or cookie-check response is lost');
+    assert.equal(apiRequests.filter(r => r.path === '/api/v1/session').length, postsBefore + 1, path);
+    assert.deepEqual(outcomes, Array(4).fill('session_unconfirmed'), path);
+    await isolated.close();
+  }
+  lostResponsePath = '';
   assert.deepEqual(failures, []);
-  console.log('Real API browser passed: HTTPS HttpOnly/Secure/Strict cookie accepted and sent; reload identity; server XP; two isolated guests share ordered board; nickname preserves ID/XP; deletion cascades and clears cookie. All requests intercepted; Cloudflare runtime not exercised.');
+  console.log('Real API browser passed: HTTPS HttpOnly/Secure/Strict cookie accepted and sent; reload identity; server XP; two isolated guests share ordered board; nickname preserves ID/XP; deletion cascades and clears cookie; lost creation/verification responses cannot repeat guest creation. All requests intercepted; Cloudflare runtime not exercised.');
 } finally { await browser.close(); sqlite.close(); }
 
