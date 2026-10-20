@@ -17,7 +17,8 @@ if (temporary) {
 const screenshotDirectory = resolve(option('--screenshots') || join(tmpdir(), 'quiet-leaderboard-page-screenshots'));
 await mkdir(screenshotDirectory, { recursive: true });
 const configBefore = await readFile(join(directory, 'leaderboard-config.json'));
-assert.equal(JSON.parse(configBefore).apiBase, '');
+assert.deepEqual(configBefore, await readFile(new URL('../web/leaderboard-config.json', import.meta.url)),
+  'The export must preserve the reviewed public API config; fixture routing below remains isolated');
 const origin = 'https://quiet-leaderboard.test';
 const prefix = '/quiet-solitaire-web/';
 const address = origin + prefix + 'leaderboard/';
@@ -160,3 +161,4 @@ try {
   await browser.close();
   if (temporary) await rm(temporary, { recursive: true, force: true });
 }
+

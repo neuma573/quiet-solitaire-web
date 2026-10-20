@@ -143,7 +143,8 @@ class WebBuildTests(unittest.TestCase):
             build.copy_public_web_assets(self.output)
         actual = {p.relative_to(self.output).as_posix() for p in self.output.rglob("*") if p.is_file()}
         self.assertEqual(actual, set(build.PUBLIC_WEB_ASSETS))
-        self.assertEqual(json.loads((self.output / "leaderboard-config.json").read_text())["apiBase"], "")
+        self.assertEqual((self.output / "leaderboard-config.json").read_bytes(),
+                         (self.pipeline / "web/leaderboard-config.json").read_bytes())
         self.assertIn('href="../"', (self.output / "leaderboard/index.html").read_text())
 
     def test_public_assets_reject_missing_file_and_symlinked_page_directory(self):
@@ -160,3 +161,4 @@ class WebBuildTests(unittest.TestCase):
         with patch.object(build, "ROOT", self.pipeline):
             with self.assertRaisesRegex(RuntimeError, "missing or unsafe"):
                 build.copy_public_web_assets(self.output)
+

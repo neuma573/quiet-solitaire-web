@@ -2,8 +2,38 @@
 
 This directory is an independent gameplay Worker and D1 database. It does not
 import, configure, or reuse the repository-dispatch Worker, its GitHub token,
-webhook secret, or root `wrangler.jsonc`. No account, database, route, secret,
-deployment, or paid service has been created by adding these files.
+webhook secret, or root `wrangler.jsonc`.
+
+## Production deployment — 2026-10-20
+
+The independent `quiet-solitaire-leaderboard` Worker is deployed at
+`https://solitaire-api.neuma573.com`, with the separate D1 database of the same
+name bound as `DB`. Both migrations (`0001_guest_xp.sql` and
+`0002_bounded_cleanup.sql`) are applied. The hostname was absent before adding
+the Worker Custom Domain; no existing DNS record was replaced.
+
+Production uses `ALLOWED_ORIGIN=https://neuma573.com`, an empty `API_PREFIX`,
+and a generated `RATE_LIMIT_SALT` stored only as an encrypted Worker secret.
+`LOCAL_DEVELOPMENT` is absent. No API token, OAuth grant, paid plan, dispatch
+Worker change, or original game repository change was needed. No cleanup cron
+is configured. Existing platform logging settings were left unchanged (Workers
+Logs enabled); the example config's disabled observability is not a statement
+about the dashboard deployment. This API code never logs cookies, tokens, or
+request bodies.
+
+The production HTTPS board returns `200` with the empty, `client-reported`
+board. Exact-origin credentialed CORS and preflight, foreign-origin rejection,
+private `/me` rejection without Origin or a session, and invalid-limit rejection
+were checked through live GET/OPTIONS requests. No production guest, run, win,
+or XP was created for those checks. Authenticated cookie/CSRF writes, win/retry,
+deletion and cleanup are covered by isolated tests; production writes and a
+real browser's post-release cookie persistence remain separate checks.
+
+The shared frontend config points to this same-site HTTPS hostname. That
+connection takes effect only after its frontend PR is approved, merged, and
+deployed. It does not enable participation automatically or upload old local
+totals. An empty `apiBase` still disables API calls. GitHub Pages' alternate
+`github.io` origin is intentionally not allowed; use `https://neuma573.com`.
 
 The board orders cumulative XP descending, then account creation time and UUID
 for deterministic ties. Its public rows contain only rank, nickname, XP, and
@@ -171,11 +201,12 @@ Run it against fresh temporary `--persist-to` storage, not a personal local
 database. [VERIFICATION.md](VERIFICATION.md) records the tested runtime versions,
 commands, results and remaining deployment boundary.
 
-## External setup required — not performed
+## Setup reference for a new environment
 
-Concrete proposal for approval (names are planned, availability is not checked):
+These are the chosen production values; new environments need their own
+resource availability and approval checks:
 
-| Resource or setting | Proposed production value |
+| Resource or setting | Production value |
 | --- | --- |
 | New gameplay Worker | `quiet-solitaire-leaderboard` |
 | New D1 database | `quiet-solitaire-leaderboard`, binding `DB` |
@@ -183,14 +214,14 @@ Concrete proposal for approval (names are planned, availability is not checked):
 | `ALLOWED_ORIGIN` | `https://neuma573.com` (origin only, no project path) |
 | `API_PREFIX` | empty string for that dedicated API hostname |
 | `LOCAL_DEVELOPMENT` | absent in production |
-| Database ID and account/zone IDs | supplied only after the chosen resources are approved |
+| Database ID and account/zone IDs | use the intended environment's IDs; not frontend settings |
 | Cleanup | no cron configured; cadence/activation pending usage validation |
 | Runtime secret | `RATE_LIMIT_SALT`: a fresh random value with at least 32 bytes of entropy |
 
 The salt only HMACs daily network quota keys; it is not a GitHub credential,
 user ID, session bearer, or score-signing key. The runtime needs no Cloudflare
-API token: D1 is accessed through the `DB` binding. No secret value has been
-generated or stored as part of this proposal.
+API token: D1 is accessed through the `DB` binding. Never commit a generated
+production salt or copy it into the frontend config.
 
 For operator setup, scope access to the intended Cloudflare account and zone.
 Current [Workers roles](https://developers.cloudflare.com/workers/authorization/workers/)
@@ -231,7 +262,7 @@ Before publishing, obtain approval for the following concrete choices/actions:
    chosen route/domain. Leave cleanup scheduling disabled until its migration,
    retention scope, and staged usage have been reviewed. No dispatch Worker changes are
    needed. Configure the web-owned frontend API base only after the new API is
-   ready; its committed default remains disabled.
+   ready; keep the frontend API base empty until that environment is ready.
 5. Verify HTTPS cookie persistence, exact-origin CORS, private `/me`, nickname
    edits, one-time XP credit/retry, two independent browsers sharing the same
    board, deletion, cleanup, and no token/body logging in staging. Review the
@@ -243,4 +274,5 @@ describe binding and transaction semantics. Schema writes use bound parameters;
 multi-statement guest creation/deletion/cleanup uses transactional `DB.batch`.
 The contribution trigger and unique constraints live in the same SQLite
 transaction as the insert, avoiding a client-side read/modify/write XP total.
+
 
