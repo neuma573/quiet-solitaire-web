@@ -8,6 +8,7 @@ import { resolve, extname, sep, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { handle } from '../leaderboard/index.mjs';
+import { applyMigrations } from './leaderboard-migrations.mjs';
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const argv = process.argv.slice(2);
@@ -27,7 +28,7 @@ const mime = { '.wasm': 'application/wasm', '.pck': 'application/octet-stream', 
   '.js': 'application/javascript', '.mjs': 'application/javascript', '.css': 'text/css',
   '.png': 'image/png', '.json': 'application/json', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
 const sqlite = new DatabaseSync(':memory:');
-sqlite.exec(readFileSync(new URL('../leaderboard/migrations/0001_guest_xp.sql', import.meta.url), 'utf8'));
+applyMigrations(sqlite);
 const statement = (sql, args = []) => ({
   sql, args,
   bind(...values) { return statement(sql, values); },
@@ -215,3 +216,4 @@ try {
   console.error('Failure screenshots: ' + screenshotDirectory);
   throw error;
 } finally { await browser.close(); sqlite.close(); }
+

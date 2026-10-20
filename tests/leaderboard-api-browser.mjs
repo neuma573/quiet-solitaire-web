@@ -4,12 +4,13 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { handle } from '../leaderboard/index.mjs';
+import { applyMigrations } from './leaderboard-migrations.mjs';
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const origin = 'https://quiet-leaderboard.test';
 const apiOrigin = 'https://api.quiet-leaderboard.test';
 const sqlite = new DatabaseSync(':memory:');
-sqlite.exec(readFileSync(new URL('../leaderboard/migrations/0001_guest_xp.sql', import.meta.url), 'utf8'));
+applyMigrations(sqlite);
 const statement = (sql, args = []) => ({
   sql, args,
   bind(...values) { return statement(sql, values); },
@@ -113,3 +114,4 @@ try {
   assert.deepEqual(failures, []);
   console.log('Real API browser passed: HTTPS HttpOnly/Secure/Strict cookie accepted and sent; reload identity; server XP; two isolated guests share ordered board; nickname preserves ID/XP; deletion cascades and clears cookie. All requests intercepted; Cloudflare runtime not exercised.');
 } finally { await browser.close(); sqlite.close(); }
+

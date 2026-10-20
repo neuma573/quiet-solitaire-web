@@ -63,7 +63,7 @@ async function body(request) {
   const buffer = new Uint8Array(bytes);
   let offset = 0;
   for (const chunk of chunks) { buffer.set(chunk, offset); offset += chunk.byteLength; }
-  try { return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(buffer)); }
+  try { return JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(buffer)); }
   catch { fail(400, 'invalid_json'); }
 }
 export function normalizeNickname(value) {
@@ -291,14 +291,36 @@ function decorate(response, allowed, origin) {
   return response;
 }
 
-/** Schedule only after setup approval; completed guest results remain until deletion. */
+// At most 75 temporary rows across all three tables per invocation. The caller
+// cannot raise this ceiling; a backlog needs later invocations, not a loop here.
+export const CLEANUP_ROWS_PER_TABLE = 25;
+
+/** Retention cleanup never removes guests, XP, or completed contributions. */
 export async function cleanup(env, now = Date.now()) {
-  await env.DB.batch([
-    env.DB.prepare('DELETE FROM rate_limits WHERE expires_at < ?').bind(now),
-    env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now),
-    env.DB.prepare('DELETE FROM runs WHERE expires_at < ? AND NOT EXISTS (SELECT 1 FROM results WHERE results.run_id = runs.id)').bind(now),
-    // Expired, unrecoverable guest identities are removed after one year of inactivity.
-    env.DB.prepare('DELETE FROM guests WHERE updated_at < ? AND NOT EXISTS (SELECT 1 FROM sessions WHERE sessions.user_id = guests.id AND sessions.expires_at > ?)').bind(now - 365 * 86400000, now)
+  if (!Number.isSafeInteger(now) || now < 0) throw new TypeError('Invalid cleanup time');
+  const results = await env.DB.batch([
+    env.DB.prepare(`DELETE FROM rate_limits WHERE rowid IN (
+      SELECT rowid FROM rate_limits WHERE expires_at < ? ORDER BY expires_at, rowid LIMIT ?
+    ) RETURNING 1 AS removed`).bind(now, CLEANUP_ROWS_PER_TABLE),
+    env.DB.prepare(`DELETE FROM sessions WHERE rowid IN (
+      SELECT rowid FROM sessions WHERE expires_at < ? ORDER BY expires_at, rowid LIMIT ?
+    ) RETURNING 1 AS removed`).bind(now, CLEANUP_ROWS_PER_TABLE),
+    // Limit the indexed candidate set BEFORE the defensive result lookup.
+    // Completed history cannot cause a scan of the full expired runs table.
+    env.DB.prepare(`DELETE FROM runs WHERE id IN (
+      SELECT id FROM runs WHERE cleanup_pending = 1 AND expires_at < ?
+      ORDER BY expires_at, id LIMIT ?
+    ) AND NOT EXISTS (SELECT 1 FROM results WHERE results.run_id = runs.id)
+    RETURNING 1 AS removed`).bind(now, CLEANUP_ROWS_PER_TABLE)
   ]);
+  const deleted = Object.fromEntries(['rate_limits', 'sessions', 'runs'].map((table, i) => [table, results[i].results.length]));
+  const sumMeta = key => results.every(r => Number.isFinite(r.meta?.[key]))
+    ? results.reduce((total, r) => total + r.meta[key], 0) : null;
+  // Aggregate counts only; callers may inspect this return value. No logs,
+  // identities, cookies, IP hashes, payloads, or new HTTP endpoint are added.
+  return { deleted, totalDeleted: Object.values(deleted).reduce((a, b) => a + b, 0),
+    usage: { rowsRead: sumMeta('rows_read'), rowsWritten: sumMeta('rows_written'),
+      databaseDurationMs: sumMeta('duration') } };
 }
 export default { fetch: (request, env) => handle(request, env), scheduled: (_event, env, ctx) => ctx.waitUntil(cleanup(env)) };
+

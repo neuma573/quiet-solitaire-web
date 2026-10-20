@@ -122,10 +122,13 @@ retries do not consume write quota. Shared networks may share an IP quota;
 changing network or clearing cookies does not become Sybil protection.
 `429` responses include a conservative `Retry-After: 3600`.
 
-The production example schedules daily cleanup: expired quota buckets and
-sessions, expired runs without results, and unrecoverable guest data after one
-year without activity or a live session. Completed contributions remain while
-their guest remains. Cleanup is also exported for local tests.
+Cleanup removes at most 25 expired quota buckets, 25 expired sessions and 25
+expired runs without results per invocation (75 temporary rows total). It never
+deletes guests, cumulative XP, or completed runs/results, including inactive or
+unrecoverable guests. Explicit guest-requested deletion remains unchanged.
+The production example deliberately has no cron trigger. A cadence must be
+chosen only after staged usage measurements and separate activation approval.
+[CLEANUP.md](CLEANUP.md) covers indexes, migration cost, measurements and limits.
 
 ## Local development and checks
 
@@ -181,7 +184,7 @@ Concrete proposal for approval (names are planned, availability is not checked):
 | `API_PREFIX` | empty string for that dedicated API hostname |
 | `LOCAL_DEVELOPMENT` | absent in production |
 | Database ID and account/zone IDs | supplied only after the chosen resources are approved |
-| Cleanup | daily `23 4 * * *` UTC; observability disabled |
+| Cleanup | no cron configured; cadence/activation pending usage validation |
 | Runtime secret | `RATE_LIMIT_SALT`: a fresh random value with at least 32 bytes of entropy |
 
 The salt only HMACs daily network quota keys; it is not a GitHub credential,
@@ -221,11 +224,12 @@ Before publishing, obtain approval for the following concrete choices/actions:
    `API_PREFIX` appropriately (usually empty). GitHub Pages → `workers.dev` is
    cross-site: Strict cookies will not work, and third-party cookies would be
    unreliable. Do not weaken cookies as a workaround.
-3. Create the new database, apply this directory's migration to that database,
+3. Create the new database, apply this directory's migrations to that database,
    bind it as `DB`, and set a fresh high-entropy `RATE_LIMIT_SALT` as a Worker
    secret. Do not reuse dispatch secrets or commit production credentials.
 4. Deploy only the new gameplay Worker with its separate production config and
-   chosen route/domain; configure daily cleanup. No dispatch Worker changes are
+   chosen route/domain. Leave cleanup scheduling disabled until its migration,
+   retention scope, and staged usage have been reviewed. No dispatch Worker changes are
    needed. Configure the web-owned frontend API base only after the new API is
    ready; its committed default remains disabled.
 5. Verify HTTPS cookie persistence, exact-origin CORS, private `/me`, nickname
@@ -239,3 +243,4 @@ describe binding and transaction semantics. Schema writes use bound parameters;
 multi-statement guest creation/deletion/cleanup uses transactional `DB.batch`.
 The contribution trigger and unique constraints live in the same SQLite
 transaction as the insert, avoiding a client-side read/modify/write XP total.
+
