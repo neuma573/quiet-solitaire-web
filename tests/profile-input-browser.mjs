@@ -18,12 +18,21 @@ const mime = { '.wasm': 'application/wasm', '.pck': 'application/octet-stream',
 let server, browser, page;
 let address = option('--url');
 const errors = [];
+const directory = option('--directory');
+let configResponses = 0;
 try {
-  if (option('--directory')) {
-    const root = resolve(option('--directory'));
+  if (directory) {
+    const root = resolve(directory);
     server = createServer(async (req, res) => {
       try {
         const path = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+        // Exercise input/focus against the real export without contacting the
+        // API configured for production. Never rewrite the export on disk.
+        if (path === prefix + 'leaderboard-config.json') {
+          configResponses++;
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+          res.end(JSON.stringify({ apiBase: '' })); return;
+        }
         const file = resolve(root, path.slice(prefix.length) || 'index.html');
         if (!path.startsWith(prefix) || !file.startsWith(root + sep) || !(await stat(file)).isFile()) {
           res.writeHead(404).end(); return;
@@ -57,6 +66,16 @@ try {
     page.on('response', response => {
       if (response.status() >= 400 && /\.(wasm|pck|m?js|css|png)(\?|$)/.test(response.url())) errors.push(response.url());
     });
+    if (directory) {
+      const localOrigin = new URL(address).origin;
+      await page.route('**/*', route => {
+        if (new URL(route.request().url()).origin !== localOrigin) {
+          errors.push('Unexpected external request in directory fixture');
+          return route.abort('blockedbyclient');
+        }
+        return route.continue();
+      });
+    }
     await page.goto(address, { waitUntil: 'load', timeout: 120_000 });
     await page.waitForFunction(() => !document.getElementById('status'), null, { timeout: 120_000 });
     await page.waitForTimeout(3500); // Engine readiness precedes the native menu's startup transition.
@@ -88,6 +107,7 @@ try {
     // Exercise HTML dialog focus restoration before opening the native popup.
     await input(195, 238);
     await page.locator('.ql-dialog').waitFor({ state: 'visible' });
+    if (directory) await page.getByText('공유 리더보드 서버가 아직 연결되지 않았습니다. 연결 후 이용할 수 있습니다.', { exact: true }).waitFor({ state: 'visible' });
     await page.getByRole('button', { name: '닫기', exact: true }).click();
     await page.locator('.ql-dialog').waitFor({ state: 'hidden' });
     const all = await crop(28, 405, 260, 32);
@@ -134,6 +154,7 @@ try {
     await page.close(); page = null;
     console.log(`Profile input passed: ${engine}/${name}; five difficulty options, HTML focus return, outside dismissal, Back, page recreation, single stock action/Undo`);
   }
+  if (directory) assert.ok(configResponses >= 4, 'Each input case must load the isolated disabled config');
   assert.deepEqual(errors, [], 'All JavaScript, Godot, audio and asset errors fail this real-server test');
 } catch (error) {
   if (page) await page.screenshot({ path: join(screenshots, 'failure.png') }).catch(() => {});
@@ -142,3 +163,4 @@ try {
   await browser?.close();
   if (server) await new Promise(done => server.close(done));
 }
+
