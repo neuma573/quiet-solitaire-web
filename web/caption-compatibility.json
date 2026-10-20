@@ -1,0 +1,14 @@
+{
+  "source_sha": "35615547ec5ef09a61cb5bc260355677b1c71a9c",
+  "description": "Reviewed NanumSquare Web layout only: Japanese mode captions use 20px side margins (350px at logical 390); other languages keep their original margins. Undo/Pause minimum touch sizes round upward to whole logical units. Tests and font sizes are unchanged.",
+  "files": {
+    "scripts/mode_selection.gd": {
+      "before_sha256": "26b535132f677a535e79b09f6b640fa312b21091c0508c5cdf7784d9afcdf65f",
+      "after_sha256": "e7ffe66450e963318b5c0d51906ee3e110681624538210d56ac47cc4185d48ed"
+    },
+    "scripts/main.gd": {
+      "before_sha256": "aae2dc77c5867714fb7033a1e48baf97f1d55ebd766bcdddfb2037de935d01ae",
+      "after_sha256": "a4da01654985cf65997f1bfb8f6816d930c1e99d2a61c3096d81b2372d95d705"
+    }
+  }
+}

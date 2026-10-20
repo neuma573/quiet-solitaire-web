@@ -9,10 +9,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import urllib.request
 from xml.sax.saxutils import escape
 from audit_export import audit
-from leaderboard_overlay import apply_overlay
+from caption_overlay import apply_caption_overlay
+from leaderboard_overlay import apply_overlay, validate_source_contract
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -54,8 +54,12 @@ def prepare_fonts(project: Path, diagnostics: Path) -> dict[str, str]:
     fonts.mkdir()
     manifest = json.loads((ROOT / "web/font.json").read_text())
     for config in manifest.values():
-        with urllib.request.urlopen(config["url"], timeout=60) as response:
-            data = response.read()
+        asset = ROOT / "web" / config["path"]
+        if (asset.is_symlink() or not asset.is_file() or (ROOT / "web/fonts").is_symlink()
+                or not asset.resolve().is_relative_to((ROOT / "web/fonts").resolve())
+                or Path(config["filename"]).name != config["filename"]):
+            raise RuntimeError("Bundled Web font is missing or unsafe")
+        data = asset.read_bytes()
         if hashlib.sha256(data).hexdigest() != config["sha256"]:
             raise RuntimeError("Web font checksum mismatch")
         (fonts / config["filename"]).write_bytes(data)
@@ -84,6 +88,10 @@ def build(source: Path, output: Path, godot: str, pipeline_sha: str, templates: 
         directory = Path(scratch)
         project = directory / "project"
         shutil.copytree(source, project, ignore=shutil.ignore_patterns(".git", ".godot", "builds", "__pycache__"))
+        # Check original hook/XP hashes, then prepare this exact copy for the
+        # pinned Web font before regression. Export the same tested copy.
+        validate_source_contract(project, source_sha=sha)
+        apply_caption_overlay(project, source_sha=sha)
         environment = prepare_fonts(project, diagnostics)
         # A fresh checkout has no generated CSV translations yet. Import them before
         # loading the project's translation list, without masking any engine errors.

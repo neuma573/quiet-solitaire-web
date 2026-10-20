@@ -102,6 +102,40 @@ func _run() -> void:
 			check(scroll.get_global_rect().grow(1.0).encloses(last.get_global_rect()),"Last statistics row is reachable by native scrolling")
 			main.free()
 			await process_frame
+			# Inspect the actual compiled font and viewport, rather than assuming
+			# the host OS's SystemFont is equivalent to the browser fallback.
+			var mode: Control = load("res://scenes/mode_selection.tscn").instantiate()
+			root.add_child(mode)
+			await process_frame
+			await process_frame
+			var caption: Label = mode._captions[0]
+			# Native macOS/Windows SystemFont can still resolve installed fonts.
+			# Use the PCK's exact Web FontFile chain on every test host.
+			var web_theme: Theme = load("res://web-fonts/theme.tres")
+			caption.add_theme_font_override("font", web_theme.default_font)
+			mode._fit_captions()
+			await process_frame
+			await process_frame
+			var font: Font = caption.get_theme_font("font")
+			var families: Array[String] = []
+			for rid: RID in font.get_rids():
+				families.append(TextServerManager.get_primary_interface().font_get_name(rid))
+			check(families.size() >= 2 and families[0] == "NanumSquare"
+				and "Noto Sans CJK KR" in families, "Compiled captions use the pinned primary and CJK fallback")
+			var preview_bounds: Rect2 = mode._previews[0].get_global_rect()
+			for key: String in ["PREVIEW_STACK", "PREVIEW_REVEAL", "PREVIEW_FOUNDATION"]:
+				caption.text = tr(key)
+				await process_frame
+				await process_frame
+				check(caption.get_theme_font_size("font_size") == 16, "Caption keeps 16 logical units")
+				if mode.size.x >= 390:
+					check(caption.get_line_count() == 1, "Caption fits one line at a standard or wider logical viewport")
+				check(caption.size.y >= caption.get_minimum_size().y
+					and caption.get_global_rect().end.y < mode._play.get_global_rect().position.y,
+					"Caption remains fully visible above Play")
+				check(mode._previews[0].get_global_rect() == preview_bounds, "Changing caption preserves the preview bounds")
+			mode.free()
+			await process_frame
 			var screen: Control = load("res://scenes/game.tscn").instantiate()
 			root.add_child(screen)
 			screen.get("_clock").process_mode = Node.PROCESS_MODE_DISABLED

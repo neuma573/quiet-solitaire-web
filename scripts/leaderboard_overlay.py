@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 AUTOLOAD = 'QuietWebLeaderboard="*res://web-leaderboard/leaderboard_bridge.gd"'
 
 
-def apply_overlay(project: Path, *, source_sha: str) -> None:
+def validate_source_contract(project: Path, *, source_sha: str, prepared: bool = False) -> None:
     project = project.resolve()
     if any((ancestor / ".git").exists() for ancestor in (project, *project.parents)):
         raise RuntimeError("Leaderboard overlay requires a disposable copy outside a Git checkout")
@@ -18,13 +18,23 @@ def apply_overlay(project: Path, *, source_sha: str) -> None:
     files = manifest.get("files")
     if not isinstance(files, dict) or not files:
         raise RuntimeError("Leaderboard compatibility manifest is incomplete")
+    prepared_files = manifest.get("prepared_files", {})
+    if not isinstance(prepared_files, dict) or not set(prepared_files).issubset(files):
+        raise RuntimeError("Leaderboard prepared contract is incomplete")
     for name, expected in files.items():
         path = project / name
         if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(project):
             raise RuntimeError("Leaderboard source contract is missing or unsafe")
         text = path.read_text(encoding="utf-8")
+        if prepared:
+            expected = prepared_files.get(name, expected)
         if hashlib.sha256(text.encode("utf-8")).hexdigest() != expected:
             raise RuntimeError("Source hooks or XP rules changed; leaderboard review required")
+
+
+def apply_overlay(project: Path, *, source_sha: str) -> None:
+    project = project.resolve()
+    validate_source_contract(project, source_sha=source_sha, prepared=True)
     config_file = project / "project.godot"
     if config_file.is_symlink() or not config_file.is_file():
         raise RuntimeError("Leaderboard requires a regular project.godot")

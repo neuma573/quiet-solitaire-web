@@ -1,6 +1,9 @@
-Arimo-Regular.ttf
-Copyright 2026 The Arimo Project Authors (https://github.com/googlefonts/Arimo)
-Source: googlefonts/Arimo, commit 4a6255f269916ae7ad3fc2706b0935e7621396b8
+NanumSquareR.ttf (original NanumSquare, Regular, Version 1.000; 160623_01)
+Copyright ⓒ 2016 NAVER Corporation. All rights reserved.
+Font designed by Sandoll Communications Inc.
+Official source: https://hangeul.naver.com/hangeul_static/webfont/zips/nanum-square.zip
+License and redistribution terms: https://help.naver.com/service/30016/contents/18088?osType=PC&lang=ko
+The original font bytes are bundled unchanged under the SIL Open Font License 1.1 below.
 
 NotoSansCJKkr-Regular.otf
 Copyright © 2014-2021 Adobe (http://www.adobe.com/).
