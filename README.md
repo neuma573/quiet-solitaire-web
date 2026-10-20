@@ -9,6 +9,8 @@ https://neuma573.github.io/quiet-solitaire-web/ 는 계정의 기존 도메인�
 
 ## 자동 배포
 
+현재 원본 호환성 정책은 [Source compatibility gates](docs/source-compatibility.md)를 따릅니다. 아래 특정 SHA의 검토 기록은 참고 정보이며 커밋별 승인 조건은 아닙니다.
+
 ```mermaid
 flowchart LR
     A[Private 앱 저장소 main PR 머지] -->|GitHub Webhook| W[Cloudflare Worker · 서명 검증]

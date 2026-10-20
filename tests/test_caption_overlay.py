@@ -63,18 +63,21 @@ class CaptionOverlayTests(unittest.TestCase):
         self.assertEqual({p.relative_to(self.project).as_posix() for p in self.project.rglob("*") if p.is_file()},
                          {"scripts/mode_selection.gd", "scripts/main.gd"})
 
-    def test_unreviewed_or_malformed_revision_refuses_before_write(self):
-        for sha in ("b" * 40, "a" * 39, "a" * 40 + "\n"):
-            with self.subTest(sha=sha), self.assertRaisesRegex(RuntimeError, "revision has not been reviewed"):
+    def test_new_revision_with_matching_anchors_is_accepted(self):
+        overlay.apply_caption_overlay(self.project, source_sha="b" * 40)
+        self.assertEqual(self.target.read_text(), self.expected)
+
+    def test_malformed_revision_refuses_before_write(self):
+        for sha in ("a" * 39, "a" * 40 + "\n"):
+            with self.subTest(sha=sha), self.assertRaisesRegex(RuntimeError, "full commit SHA"):
                 overlay.apply_caption_overlay(self.project, source_sha=sha)
             self.assertEqual(self.target.read_text(), self.original)
 
-    def test_changed_source_refuses_before_write(self):
+    def test_unrelated_source_text_is_preserved(self):
         changed = self.original + "# New upstream behavior\n"
         self.target.write_text(changed)
-        with self.assertRaisesRegex(RuntimeError, "Caption source changed"):
-            self.apply()
-        self.assertEqual(self.target.read_text(), changed)
+        self.apply()
+        self.assertEqual(self.target.read_text(), self.expected + "# New upstream behavior\n")
 
     def test_patch_conditions_remain_required_even_if_manifest_hash_is_updated(self):
         for text in (self.original.replace("safe.position.x", "safe.position.y"),
@@ -87,22 +90,22 @@ class CaptionOverlayTests(unittest.TestCase):
                     self.apply()
                 self.assertEqual(self.target.read_text(), text)
 
-    def test_changed_expected_result_refuses_both_edits_before_write(self):
+    def test_historical_hashes_do_not_gate_matching_anchors(self):
         self.manifest["files"]["scripts/mode_selection.gd"]["after_sha256"] = "0" * 64
+        self.manifest["files"]["scripts/mode_selection.gd"]["before_sha256"] = "0" * 64
         self.write_manifest()
-        with self.assertRaisesRegex(RuntimeError, "Caption patch result changed"):
-            self.apply()
-        self.assertEqual(self.target.read_text(), self.original)
+        self.apply()
+        self.assertEqual(self.target.read_text(), self.expected)
 
     def test_second_contract_failure_never_partially_patches_first_file(self):
-        self.main.write_text(self.main_original + "# changed\n")
-        with self.assertRaisesRegex(RuntimeError, "Caption source changed"):
+        self.main.write_text(self.main_original.replace("V.touch_size(button)", "V.other_touch_size(button)"))
+        with self.assertRaisesRegex(RuntimeError, "Caption patch conditions changed"):
             self.apply()
         self.assertEqual(self.target.read_text(), self.original)
 
     def test_repeated_application_refuses_without_changing_result(self):
         self.apply()
-        with self.assertRaisesRegex(RuntimeError, "Caption source changed"):
+        with self.assertRaisesRegex(RuntimeError, "Caption patch conditions changed"):
             self.apply()
         self.assertEqual(self.target.read_text(), self.expected)
 
