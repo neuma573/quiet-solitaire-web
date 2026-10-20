@@ -37,7 +37,7 @@ jobs:
       - name: Install locked browser verification dependencies
         run: |
           npm ci --ignore-scripts
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium webkit
           mkdir -p "$RUNNER_TEMP/screenshots"
       - name: Verify fixed phone runtime at standard and high pixel density
         run: |
@@ -47,6 +47,10 @@ jobs:
         run: node tests/leaderboard-page-browser.mjs --directory "$RUNNER_TEMP/site" --screenshots "$RUNNER_TEMP/screenshots/leaderboard"
       - name: Verify compiled My Page and guest API integration
         run: node tests/leaderboard-export-browser.mjs --directory "$RUNNER_TEMP/site" --screenshots "$RUNNER_TEMP/screenshots/profile"
+      - name: Verify native popup touch input and recovery on the actual runtime
+        run: |
+          node tests/profile-input-browser.mjs --directory "$RUNNER_TEMP/site" --screenshots "$RUNNER_TEMP/screenshots/profile-input/chromium"
+          node tests/profile-input-browser.mjs --browser webkit --directory "$RUNNER_TEMP/site" --screenshots "$RUNNER_TEMP/screenshots/profile-input/webkit"
       - name: Retain audited runtime and browser evidence only
         if: always() && steps.export.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

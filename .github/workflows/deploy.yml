@@ -56,6 +56,9 @@ jobs:
         run: |
           node scripts/smoke.mjs --directory "$RUNNER_TEMP/site" --density 1
           node scripts/smoke.mjs --directory "$RUNNER_TEMP/site" --density 2
+      - name: Verify profile popup touch selection and input recovery
+        if: steps.source.outputs.changed == 'true'
+        run: node tests/profile-input-browser.mjs --directory "$RUNNER_TEMP/site"
       - name: Confirm main has not advanced during the build
         if: steps.source.outputs.changed == 'true'
         id: fresh

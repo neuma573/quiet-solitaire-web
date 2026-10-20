@@ -41,7 +41,10 @@
       const viewport = window.visualViewport;
       const width = viewport?.width ?? window.innerWidth;
       const height = viewport?.height ?? window.innerHeight;
-      document.getElementById('phone').style.setProperty('--phone-scale', Math.min(1, width / 390, height / 760));
+      // Grow narrow portrait views while preserving desktop size and the full
+      // 390x760 board on short/landscape viewports.
+      const maximum = width <= 600 && height > width ? Infinity : 1;
+      document.getElementById('phone').style.setProperty('--phone-scale', Math.min(maximum, width / 390, height / 760));
     }
     fitPhone();
     window.addEventListener('resize', fitPhone);
