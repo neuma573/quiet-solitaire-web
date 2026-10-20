@@ -19,8 +19,9 @@ export class LeaderboardService {
   constructor(client, { randomUUID = () => globalThis.crypto.randomUUID(), onChange = () => {} } = {}) {
     this.client = client; this.randomUUID = randomUUID; this.onChange = onChange;
     this.profile = null; this.participating = false; this.active = null; this.pending = new Map();
+    this.connection = null; this.deleted = false;
     this.seen = new Set(); this.epoch = 0; this.boardGeneration = 0; this.disposed = false;
-    this.state = { enabled: client.enabled, busy: false, loadingBoard: false, entries: [], message: '', error: '', pendingCount: 0 };
+    this.state = { enabled: client.enabled, busy: false, loadingBoard: false, entries: [], message: '', error: '', connectionError: '', pendingCount: 0 };
   }
   snapshot() { return { ...this.state, profile: this.profile && { ...this.profile }, participating: this.participating }; }
   changed() { if (!this.disposed) { this.state.pendingCount = this.pending.size; this.onChange(this.snapshot()); } }
@@ -35,23 +36,30 @@ export class LeaderboardService {
     }
     this.profile = profile;
   }
-  async join() {
-    if (this.state.busy || !this.client.enabled) return;
+  join() {
+    if (this.connection) return this.connection;
+    if (this.state.busy || !this.client.enabled || this.deleted || this.disposed) return Promise.resolve();
     const epoch = ++this.epoch;
     this.boardGeneration++; this.state.loadingBoard = false;
-    this.state.busy = true; this.state.error = ''; this.changed();
-    try {
-      const data = await this.client.session();
-      if (this.disposed || this.epoch !== epoch) return;
-      this.setProfile(data.user); this.participating = true;
-      this.state.message = '참여 중입니다. 지금부터 새로 시작한 게임의 승리 XP만 반영됩니다.';
-    } catch (error) { if (this.epoch === epoch) this.state.error = error.message; }
-    finally { if (this.epoch === epoch) { this.state.busy = false; this.changed(); } }
+    this.state.busy = true; this.state.error = ''; this.state.connectionError = ''; this.changed();
+    const pending = (async () => {
+      try {
+        const data = await this.client.session();
+        if (this.disposed || this.epoch !== epoch) return;
+        this.setProfile(data.user); this.participating = true;
+        this.state.message = '';
+      } catch (error) { if (this.epoch === epoch) this.state.connectionError = error.message; }
+      finally { if (this.epoch === epoch) { this.state.busy = false; this.changed(); } }
+    })();
+    this.connection = pending;
+    const clear = () => { if (this.connection === pending) this.connection = null; };
+    pending.then(clear, clear);
+    return pending;
   }
   leave() {
     this.epoch++; this.boardGeneration++; this.state.loadingBoard = false;
-    this.participating = false; this.active = null; this.pending.clear();
-    this.state.busy = false; this.state.error = ''; this.state.message = '참여를 중지했습니다. 다시 참여하면 다음 새 게임부터 반영됩니다.';
+    this.connection = null; this.participating = false; this.active = null; this.pending.clear();
+    this.state.busy = false; this.state.error = ''; this.state.connectionError = ''; this.state.message = '';
     this.changed();
   }
   async rename(value) {
@@ -69,13 +77,13 @@ export class LeaderboardService {
   async remove() {
     if (!this.profile || this.state.busy) return;
     // Stop accepting new results before the asynchronous deletion begins.
-    this.leave(); const epoch = this.epoch; this.state.busy = true; this.changed();
+    this.leave(); this.deleted = true; const epoch = this.epoch; this.state.busy = true; this.changed();
     try {
       await this.client.remove();
       if (this.epoch !== epoch || this.disposed) return;
-      this.profile = null; this.state.entries = []; this.state.message = '게스트와 공유 순위 기록을 삭제했습니다.';
+      this.profile = null; this.state.entries = []; this.state.message = '공유 리더보드 기록을 삭제했습니다. 새로고침하면 새 고유 ID가 생성됩니다.';
       await this.refreshBoard();
-    } catch (error) { if (this.epoch === epoch) this.state.error = error.message; }
+    } catch (error) { if (this.epoch === epoch) { this.deleted = false; this.state.error = error.message; } }
     finally { if (this.epoch === epoch) { this.state.busy = false; this.changed(); } }
   }
   async refreshBoard() {
@@ -182,15 +190,10 @@ export function mountLeaderboard({ document = globalThis.document, window = glob
   const close = element(document, 'button', '닫기', 'ql-close'); close.type = 'button';
   heading.append(title, close);
   const disabled = element(document, 'p', '공유 리더보드 서버가 아직 연결되지 않았습니다. 연결 후 이용할 수 있습니다.', 'ql-note');
-  const warning = element(document, 'p', '누적 XP 순위 · 클라이언트 신고 기록으로, 검증된 경쟁 순위는 아닙니다.', 'ql-note');
   const message = element(document, 'p', '', 'ql-message'); message.setAttribute('role', 'status'); message.setAttribute('aria-live', 'polite');
   const error = element(document, 'p', '', 'ql-error'); error.setAttribute('role', 'alert');
   const profileSection = element(document, 'section', undefined, 'ql-profile');
-  const profileTitle = element(document, 'h3', '마이페이지');
-  const intro = element(document, 'p', '참여하면 자동 랜덤 닉네임과 고유 ID가 생성됩니다. 이후 새로 시작한 게임의 승리 XP와 닉네임이 공유 순위에 반영됩니다.', 'ql-note');
-  const privacy = element(document, 'p', '이 브라우저의 쿠키로 게스트를 기억합니다. 쿠키 삭제·다른 기기에서는 복구할 수 없습니다. 로그인 복구 기능은 없습니다.', 'ql-note');
-  const join = element(document, 'button', '동의하고 참여', 'ql-primary'); join.type = 'button';
-  const leave = element(document, 'button', '참여 중지'); leave.type = 'button';
+  profileSection.setAttribute('aria-label', '프로필');
   const identity = element(document, 'p', '', 'ql-identity');
   const form = element(document, 'form', undefined, 'ql-name-form');
   const label = element(document, 'label', '닉네임'); label.htmlFor = 'ql-nickname';
@@ -200,13 +203,13 @@ export function mountLeaderboard({ document = globalThis.document, window = glob
   const nameHint = element(document, 'p', '2~20자 · 글자, 숫자, 공백, _ 또는 -', 'ql-note'); nameHint.id = 'ql-name-hint';
   const save = element(document, 'button', '닉네임 저장'); save.type = 'submit';
   form.append(label, input, nameHint, save);
-  const remove = element(document, 'button', '게스트와 순위 기록 삭제', 'ql-danger'); remove.type = 'button';
+  const remove = element(document, 'button', '나의 모든 기록 삭제', 'ql-danger'); remove.type = 'button';
   const confirmDelete = element(document, 'div', undefined, 'ql-delete-confirm'); confirmDelete.hidden = true;
-  const deleteNote = element(document, 'p', '이 게스트의 닉네임·XP·공유 기록을 삭제합니다. 이 작업은 되돌릴 수 없습니다.');
+  const deleteNote = element(document, 'p', '공유 리더보드의 고유 ID·닉네임·XP와 서버 기록을 모두 삭제합니다. 기기의 게임 저장·통계는 유지됩니다. 복구할 수 없으며, 페이지를 새로 열면 새 고유 ID가 생성됩니다.');
   const confirmButton = element(document, 'button', '삭제하기', 'ql-danger'); confirmButton.type = 'button';
   const cancelDelete = element(document, 'button', '취소'); cancelDelete.type = 'button';
   confirmDelete.append(deleteNote, confirmButton, cancelDelete);
-  profileSection.append(profileTitle, intro, privacy, identity, form, join, leave, remove, confirmDelete);
+  profileSection.append(identity, form, remove, confirmDelete);
   const boardSection = element(document, 'section', undefined, 'ql-board');
   const boardHeading = element(document, 'div', undefined, 'ql-heading');
   const boardTitle = element(document, 'h3', '누적 XP 순위');
@@ -221,23 +224,22 @@ export function mountLeaderboard({ document = globalThis.document, window = glob
   boardSection.append(boardHeading, table, empty, retry);
   const pageLink = element(document, 'a', '전체 순위 페이지 (새 탭)', 'ql-page-link');
   pageLink.href = 'leaderboard/'; pageLink.target = '_blank'; pageLink.rel = 'noopener';
-  dialog.append(heading, disabled, warning, pageLink, message, error, boardSection, profileSection);
+  dialog.append(heading, disabled, pageLink, message, error, boardSection, profileSection);
   root.append(launcher, dialog); parent.append(root);
   let previousFocus = null;
   const service = new LeaderboardService(client, { onChange(state) {
     root.dataset.enabled = String(state.enabled);
-    disabled.hidden = state.enabled; warning.hidden = !state.enabled;
+    disabled.hidden = state.enabled;
     profileSection.hidden = !state.enabled; boardSection.hidden = !state.enabled;
     message.textContent = state.message; message.hidden = !state.message;
-    error.textContent = state.error; error.hidden = !state.error;
+    error.textContent = state.error || state.connectionError; error.hidden = !error.textContent;
     const profile = state.profile;
     identity.hidden = !profile; form.hidden = !profile; remove.hidden = !profile;
     if (profile) {
-      identity.textContent = `고유 ID: ${profile.id} · 누적 XP: ${profile.xp.toLocaleString('ko-KR')}`;
+      identity.textContent = `고유 ID: ${profile.id}`;
       if (document.activeElement !== input) input.value = profile.nickname;
     } else confirmDelete.hidden = true;
-    join.hidden = state.participating; join.textContent = profile ? '새 게임부터 다시 참여' : '동의하고 참여';
-    join.disabled = state.busy; leave.hidden = !state.participating; save.disabled = state.busy;
+    save.disabled = state.busy;
     remove.disabled = state.busy; confirmButton.disabled = state.busy; refresh.disabled = state.loadingBoard;
     retry.hidden = !state.pendingCount; retry.disabled = state.busy;
     const rows = state.entries.map(entry => {
@@ -255,7 +257,7 @@ export function mountLeaderboard({ document = globalThis.document, window = glob
     if (profileFocus !== true) dialog.scrollTop = 0;
     if (profileFocus && client.enabled) {
       profileSection.scrollIntoView({ block: 'start' });
-      if (service.profile) input.focus(); else join.focus();
+      if (service.profile) input.focus();
     }
     void service.refreshBoard();
   }
@@ -266,9 +268,11 @@ export function mountLeaderboard({ document = globalThis.document, window = glob
   };
   launcher.addEventListener('click', () => open()); close.addEventListener('click', dismiss);
   dialog.addEventListener('close', () => { confirmDelete.hidden = true; previousFocus?.focus?.(); });
-  join.addEventListener('click', guarded(() => service.join())); leave.addEventListener('click', () => service.leave());
   form.addEventListener('submit', guarded(() => service.rename(input.value)));
-  refresh.addEventListener('click', guarded(() => service.refreshBoard()));
+  refresh.addEventListener('click', guarded(async () => {
+    if (!service.participating && !service.deleted) await service.join();
+    await service.refreshBoard();
+  }));
   retry.addEventListener('click', guarded(() => service.retryPending()));
   remove.addEventListener('click', () => { confirmDelete.hidden = false; confirmButton.focus(); });
   cancelDelete.addEventListener('click', () => { confirmDelete.hidden = true; remove.focus(); });
@@ -284,27 +288,43 @@ export function mountLeaderboard({ document = globalThis.document, window = glob
   };
   window.QuietLeaderboardBridge = bridge;
   const eventListener = event => bridge.emit(event.detail);
-  // A restored back/forward-cache page must opt in again and cannot resume an old run.
+  // Suspending clears the active attempt; restoring reconnects the cookie,
+  // never an old run or historical local result.
   const pagehide = () => service.leave();
+  const pageshow = event => { if (event.persisted) void service.join(); };
   window.addEventListener('quiet-leaderboard', eventListener);
   window.addEventListener('pagehide', pagehide);
+  window.addEventListener('pageshow', pageshow);
   service.changed();
+  void service.join();
   return { service, open, destroy() {
     service.dispose(); root.remove(); window.removeEventListener('quiet-leaderboard', eventListener);
     window.removeEventListener('pagehide', pagehide);
+    window.removeEventListener('pageshow', pageshow);
     if (window.QuietLeaderboardBridge === bridge) delete window.QuietLeaderboardBridge;
   } };
 }
 
-export async function bootLeaderboard({ document = globalThis.document, window = globalThis.window,
+const boots = new WeakMap();
+export function bootLeaderboard({ document = globalThis.document, window = globalThis.window,
   fetchImpl = globalThis.fetch } = {}) {
-  let apiBase = '';
-  try {
-    const response = await fetchImpl(new URL('leaderboard-config.json', document.baseURI), { cache: 'no-store', credentials: 'same-origin' });
-    if (response.ok) apiBase = (await response.json()).apiBase ?? '';
-    apiBase = normalizeApiBase(apiBase, window.location);
-  } catch { apiBase = ''; /* Missing/invalid public config keeps the shared feature disabled. */ }
-  return mountLeaderboard({ document, window, client: createLeaderboardClient({ apiBase, fetchImpl, location: window.location }) });
+  if (boots.has(document)) return boots.get(document);
+  const pending = (async () => {
+    let apiBase = '';
+    try {
+      const response = await fetchImpl(new URL('leaderboard-config.json', document.baseURI), { cache: 'no-store', credentials: 'same-origin' });
+      if (response.ok) apiBase = (await response.json()).apiBase ?? '';
+      apiBase = normalizeApiBase(apiBase, window.location);
+    } catch { apiBase = ''; /* Missing/invalid public config keeps the shared feature disabled. */ }
+    const mounted = mountLeaderboard({ document, window, client: createLeaderboardClient({ apiBase, fetchImpl, location: window.location,
+      locks: window.navigator?.locks }) });
+    const destroy = mounted.destroy;
+    mounted.destroy = () => { boots.delete(document); destroy(); };
+    return mounted;
+  })();
+  boots.set(document, pending);
+  pending.catch(() => { if (boots.get(document) === pending) boots.delete(document); });
+  return pending;
 }
 
 if (typeof document !== 'undefined' && typeof window !== 'undefined') void bootLeaderboard();

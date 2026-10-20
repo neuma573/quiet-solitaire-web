@@ -61,6 +61,7 @@ test('API prefix trailing slashes and root settings agree with every client endp
       f.env.API_PREFIX = prefix;
       let cookie = '';
       const client = createLeaderboardClient({ apiBase: 'https://api.example' + (prefix ?? ''),
+        locks: { request: async (_name, _options, action) => action() },
         fetchImpl: async (url, options) => {
           const headers = new Headers(options.headers);
           headers.set('Origin', f.env.ALLOWED_ORIGIN);
@@ -120,7 +121,7 @@ test('guest UUID is stable, cookie is secure and only its hash is stored', async
   const f = fixture(); t.after(() => f.DB.sqlite.close());
   const created = await f.join();
   assert.match(created.user.id, /^[0-9a-f-]{36}$/);
-  assert.match(created.user.nickname, /\d{4}$/);
+  assert.match(created.user.nickname, /^[가-힣]+ [가-힣]+[0-9]{3}$/u);
   assert.equal(created.user.xp, 0);
   assert.equal(created.csrfToken.length, 64);
   const repeated = await f.call('/v1/session', { method: 'POST', body: {} });
@@ -152,7 +153,7 @@ test('guest UUID is stable, cookie is secure and only its hash is stored', async
   assert.equal((await f.call('/v1/me')).status, 200);
 });
 
-test('new opt-in run credits once, nickname preserves ID/XP, board publishes minimal fields', async t => {
+test('a connected new run credits once, nickname preserves ID/XP, board publishes minimal fields', async t => {
   const f = fixture(); t.after(() => f.DB.sqlite.close());
   const initial = await f.join();
   const started = await f.call('/v1/runs', { method: 'POST', body: { mode } });

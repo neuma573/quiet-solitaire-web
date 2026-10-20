@@ -57,7 +57,7 @@ export function mountPage({ document = globalThis.document, window = globalThis.
       const entries = readEntries(await client.board({ signal: controller.signal }));
       if (disposed || current !== controller) return;
       if (!entries.length) {
-        state('empty', '아직 등록된 기록이 없어요', '게임에서 리더보드에 참여하고 첫 승리의 XP를 남겨 보세요.');
+        state('empty', '아직 등록된 기록이 없어요', '게임에서 첫 승리의 XP를 남겨 보세요.');
         return;
       }
       for (const entry of entries) {

@@ -10,6 +10,7 @@ const option = (name) => argv.includes(name) ? argv[argv.indexOf(name) + 1] : un
 const directory = option('--directory');
 let address = option('--url');
 let server;
+let configResponses = 0;
 const prefix = '/quiet-solitaire-web/';
 const mime = { '.wasm': 'application/wasm', '.pck': 'application/octet-stream',
   '.html': 'text/html', '.js': 'application/javascript', '.mjs': 'application/javascript',
@@ -20,6 +21,11 @@ if (directory) {
     try {
       const path = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
       if (!path.startsWith(prefix)) { res.writeHead(404).end(); return; }
+      if (path === prefix + 'leaderboard-config.json') {
+        configResponses++;
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ apiBase: '' })); return;
+      }
       const file = resolve(root, path.slice(prefix.length) || 'index.html');
       if (!file.startsWith(root + sep) || !(await stat(file)).isFile()) { res.writeHead(404).end(); return; }
       res.writeHead(200, { 'Content-Type': mime[extname(file)] || 'application/octet-stream' });
@@ -55,6 +61,16 @@ try {
   page.on('response', (response) => {
     if (response.status() >= 400 && /\.(wasm|pck|m?js|css|png)(\?|$)/.test(response.url())) errors.push('Runtime asset error');
   });
+  if (directory) {
+    const localOrigin = new URL(address).origin;
+    await page.route('**/*', route => {
+      if (new URL(route.request().url()).origin !== localOrigin) {
+        errors.push('External request in isolated runtime smoke');
+        return route.abort('blockedbyclient');
+      }
+      return route.continue();
+    });
+  }
   await page.goto(address, { waitUntil: 'load', timeout: 120_000 });
   await page.waitForFunction(() => {
     const status = document.querySelector('#status');
@@ -159,6 +175,7 @@ try {
   const undone = await page.screenshot({ clip: boardClip });
   assert(beforeDraw.equals(undone), 'Undo must restore the exact rendered card board');
   if (option('--screenshot')) await page.screenshot({ path: option('--screenshot').replace(/\.png$/, '-game.png') });
+  if (directory) assert.ok(configResponses >= 1, 'Runtime smoke must load its isolated disabled API config');
   assert.equal(errors.length, 0, 'Runtime must start and respond without console/asset errors');
   console.log(`Browser runtime passed: 390x760 logical phone, fixed desktop size and proportional mobile fit at ${pixelDensity}x pixel density (${locale}); resize preserves state; scaled input, stock draw and undo; source ${deployment.source_sha}`);
 } finally {

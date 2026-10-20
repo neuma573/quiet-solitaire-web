@@ -138,11 +138,10 @@ try {
   // Use actual canvas pointer input and the compiled web-owned autoload, not a JS-generated My Page event.
   await click(102, 704);
   await page.waitForTimeout(350); await frames();
-  const fallback = await nameCrop('01-native-fallback');
+  await page.waitForFunction(() => !!window.QuietLeaderboardBridge.profile()?.id);
+  const automaticProfile = await nameCrop('01-native-automatic-profile');
   await click(195, 238);
   await page.locator('.ql-dialog').waitFor({ state: 'visible', timeout: 10_000 });
-  await page.getByRole('button', { name: '동의하고 참여', exact: true }).click();
-  await page.waitForFunction(() => !!window.QuietLeaderboardBridge.profile()?.id);
   const initial = await page.evaluate(() => window.QuietLeaderboardBridge.profile());
   const nickname = '웹검증 여우';
   await page.getByRole('textbox', { name: '닉네임', exact: true }).fill(nickname);
@@ -156,7 +155,7 @@ try {
   await page.locator('.ql-dialog').waitFor({ state: 'hidden' });
   const renamedCrop = await nameCrop('03-native-renamed');
   await page.screenshot({ path: join(screenshotDirectory, '03-native-renamed-full.png') });
-  assert.ok(!fallback.equals(renamedCrop), 'Native profile pixels must change after browser nickname update');
+  assert.ok(!automaticProfile.equals(renamedCrop), 'Native automatic profile pixels must change after browser nickname update');
   // Coordinates verified against this reviewed 390x760 source export. Assert
   // the controls really change, so stale coordinates cannot silently pass a
   // nickname-only test. Crop inside the selected pill to exclude hover/focus borders.
@@ -195,17 +194,18 @@ try {
   assert.ok(renamedCrop.equals(await nameCrop('08-native-reopened')), 'Native nickname must survive returning to My Page');
   await click(195, 238);
   await page.locator('.ql-dialog').waitFor({ state: 'visible' });
-  await page.getByRole('button', { name: '게스트와 순위 기록 삭제', exact: true }).click();
+  await page.getByRole('button', { name: '나의 모든 기록 삭제', exact: true }).click();
   await page.getByRole('button', { name: '삭제하기', exact: true }).click();
   await page.waitForFunction(() => window.QuietLeaderboardBridge.profile() === null);
   await page.getByRole('button', { name: '닫기', exact: true }).click();
   await page.locator('.ql-dialog').waitFor({ state: 'hidden' });
-  assert.ok(fallback.equals(await nameCrop('09-native-deleted-fallback')), 'Deleting the guest must restore the original native fallback');
+  const deletedProfile = await nameCrop('09-native-deleted-fallback');
+  assert.ok(!automaticProfile.equals(deletedProfile) && !renamedCrop.equals(deletedProfile), 'Deleting the guest must clear both automatic and saved native names');
   await page.screenshot({ path: join(screenshotDirectory, '10-native-page-after-delete.png') });
   assert.equal(sqlite.prepare('SELECT count(*) AS n FROM guests').get().n, 0);
   assert.ok(apiRequests.some(request => request.method === 'PATCH' && request.path === '/api/v1/me' && request.hasCookie));
   assert.equal(apiRequests.some(request => request.path.includes('/runs')), false, 'Profile test must not invent or submit game runs/results');
-  assert.deepEqual(await readFile(join(directory, 'leaderboard-config.json')), configBefore, 'Exported disabled config must remain unchanged');
+  assert.deepEqual(await readFile(join(directory, 'leaderboard-config.json')), configBefore, 'Exported public config must remain unchanged');
   assert.deepEqual(failures, []);
   await writeFile(join(screenshotDirectory, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2));
   console.log('Compiled Godot Web profile passed: native My Page button opens HTML dialog; real guest API rename preserves ID/XP; verified draw/scoring selection and all five difficulty filters preserve native nickname; page recreation and guest deletion preserve/restore identity. No synthetic game result or gameplay proof.');

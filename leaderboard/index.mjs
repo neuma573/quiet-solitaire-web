@@ -7,8 +7,22 @@ const MAX_BODY = 2048;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HEX_TOKEN = /^[0-9a-f]{64}$/;
 const encoder = new TextEncoder();
-const adjectives = ['고요한', '푸른', '느긋한', '반짝이는', '다정한', '용감한', '포근한', '즐거운'];
-const animals = ['수달', '여우', '고래', '참새', '토끼', '다람쥐', '펭귄', '고양이'];
+// Curated adjective forms and animal nouns need no inflection service.
+// Names are display labels; UUIDs and bearer sessions define identity.
+export const NICKNAME_PARTS = Object.freeze({
+  adjectives: Object.freeze([
+    '예쁜', '귀여운', '다정한', '포근한', '화사한', '앙증맞은', '사랑스러운', '상냥한',
+    '온순한', '해맑은', '따스한', '보드라운', '부드러운', '말랑한', '폭신한', '보송보송한',
+    '뽀송뽀송한', '복슬복슬한', '몽실몽실한', '동그란', '통통한', '오동통한', '아담한', '자그마한',
+    '조그마한', '쪼그만', '작은', '가벼운', '산뜻한', '발랄한', '명랑한', '느긋한',
+  ]),
+  nouns: Object.freeze([
+    '고양이', '강아지', '토끼', '수달', '다람쥐', '햄스터', '고슴도치', '판다',
+    '코알라', '펭귄', '병아리', '오리', '참새', '여우', '사슴', '알파카',
+    '라마', '양', '아기곰', '레서판다', '친칠라', '쿼카', '사막여우', '물개',
+    '해달', '너구리', '북극곰', '미어캣', '기니피그', '카피바라', '북극여우', '아기물범',
+  ]),
+});
 
 class ApiError extends Error {
   constructor(status, code) { super(code); this.status = status; this.code = code; }
@@ -73,9 +87,11 @@ export function normalizeNickname(value) {
       !/[\p{L}\p{N}]/u.test(nickname)) fail(400, 'invalid_nickname');
   return nickname;
 }
-function randomNickname() {
+export function randomNickname() {
   const numbers = crypto.getRandomValues(new Uint32Array(3));
-  return `${adjectives[numbers[0] % adjectives.length]}${animals[numbers[1] % animals.length]}${1000 + numbers[2] % 9000}`;
+  const { adjectives, nouns } = NICKNAME_PARTS;
+  const suffix = String(numbers[2] % 1000).padStart(3, '0');
+  return `${adjectives[numbers[0] % adjectives.length]} ${nouns[numbers[1] % nouns.length]}${suffix}`;
 }
 export function validateMode(mode) {
   keys(mode, ['difficulty', 'draw', 'scoring']);

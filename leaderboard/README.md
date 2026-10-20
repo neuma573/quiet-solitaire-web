@@ -31,8 +31,8 @@ real browser's post-release cookie persistence remain separate checks.
 
 The shared frontend config points to this same-site HTTPS hostname. That
 connection takes effect only after its frontend PR is approved, merged, and
-deployed. It does not enable participation automatically or upload old local
-totals. An empty `apiBase` still disables API calls. GitHub Pages' alternate
+deployed. The game connects a guest automatically once the new frontend is
+deployed, without uploading old local totals. An empty `apiBase` still disables API calls. GitHub Pages' alternate
 `github.io` origin is intentionally not allowed; use `https://neuma573.com`.
 
 The board orders cumulative XP descending, then account creation time and UUID
@@ -71,8 +71,8 @@ cannot authorize or change a result.
 
 Modes are exactly `difficulty: casual|normal|challenge`, `draw: 1|3`, and
 `scoring: standard|vegas`. The server stores these with `quiet-xp-v1` when
-issuing a random run UUID. The browser must explicitly join before starting a
-new game attempt. Runs started before joining, abandoned games, losses,
+issuing a random run UUID. The browser must finish its automatic cookie-owned
+connection before starting a new game attempt. Runs started before connection, abandoned games, losses,
 disconnected starts, and old local totals are never uploaded later.
 
 Nickname changes use NFKC normalization, trimming, and collapsing ASCII spaces.
@@ -128,6 +128,50 @@ HttpOnly, SameSite=Strict, Path=/, and has no Domain attribute. UUIDs/nicknames
 are never accepted as authentication. `/session` restores and renews the same
 identity for 180 days; there is no login or recovery key.
 
+New guests receive an automatic name from 32 descriptive adjective forms,
+32 animal nouns, and a zero-padded three-digit suffix (`000`–`999`):
+**1,024,000 distinct combinations**, for example `포근한 고양이042`.
+Every combination is 7–13 Unicode characters including the space and digits,
+within the unchanged 2–20-character server/client validation. Curated adjective
+forms avoid dynamic Korean inflection and animal-specific action phrases.
+The small static lists use one existing random-values call, with no AI/API
+request, dependency, additional database query, or uniqueness retry.
+
+The name is generated only on the new-guest INSERT and then stored in D1.
+Restoring a session or refreshing the page does not regenerate it. Existing
+automatic or manually saved names, including `API 점검`, remain unchanged;
+there is no backfill or migration. Duplicate display names are allowed and
+keep separate internal UUIDs, bearer sessions, and XP. A name is never an
+authentication key or a promise of global uniqueness. Deploying the gameplay Worker is a separate operator
+action; merging a web-repository PR alone does not update that Worker.
+
+The game frontend automatically calls `POST /v1/session` (empty JSON), then
+`GET /v1/me` to verify the browser accepted its cookie. The server restores a
+valid bearer before considering a new identity; ID/nickname alone cannot do
+that. In-flight connection calls share one promise and repeated UI boots share
+one mount. [Web Locks](https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API)
+serialize session creation/renewal and deletion across same-origin tabs, with
+a ten-second deadline. If locks or cookies are unavailable, or the network
+fails, the game and read-only board remain usable; no retry loop creates more
+guests. The board refresh control can retry a failed connection. The standalone
+ranking page remains read-only and does not itself create guests.
+
+There is no separate participation button or in-game introductory/verification
+notice. Public API `client-reported` metadata, the standalone page's trust
+notice, exact-origin CORS, CSRF, HttpOnly/Secure/Strict cookies, and quotas are
+unchanged. Connected new attempts can submit their mode and winning result
+fields listed above; no old local totals, profile IDs, or client-computed XP
+are uploaded. A pagehide suspends the current attempt; a bfcache restore
+reconnects the cookie without resuming that run.
+
+`나의 모든 기록 삭제` retains confirmation. It removes this guest's **server
+leaderboard** identity, nickname, XP and contributions, not device game saves or
+local statistics. The confirmation states that scope and irreversibility.
+Deletion does not immediately recreate a guest or resume uploads in that page;
+a subsequent page load creates a fresh identity. `새로고침` only refreshes the
+board/retries a failed connection and never resets records. No production
+records are migrated or deleted by these source changes.
+
 Clearing browser data, using another device/profile/browser, or letting the
 180-day cookie expire loses access to that guest and its XP. Another visit to
 `POST /session` while the cookie remains valid renews it. No cross-device
@@ -182,7 +226,7 @@ npx wrangler dev --local --config leaderboard/wrangler.jsonc
 
 The default allowed local frontend origin is `http://localhost:8787`. For a
 separate local static server, change the local `ALLOWED_ORIGIN` to that exact
-origin, and set the frontend's opt-in API base to the local Worker URL. Keep the
+origin, and set the frontend's API base to the local Worker URL. Keep the
 same hostname (`localhost` on both) for cookies. LOCAL_DEVELOPMENT permits only
 localhost/127.0.0.1 HTTP origins and a shared test bucket when Cloudflare's IP
 header is absent. Production requires HTTPS and Cloudflare's trusted IP header.

@@ -69,7 +69,14 @@ try {
     page.on('pageerror', error => failures.push(error.message));
     await page.goto(origin + '/'); await page.waitForFunction(() => window.ready);
   }
-  const guestA = await pageA.evaluate(() => window.client.session());
+  const sameBrowserTab = await contextA.newPage();
+  sameBrowserTab.on('pageerror', error => failures.push(error.message));
+  await sameBrowserTab.goto(origin + '/'); await sameBrowserTab.waitForFunction(() => window.ready);
+  const [guestA, concurrentGuest] = await Promise.all([
+    pageA.evaluate(() => window.client.session()), sameBrowserTab.evaluate(() => window.client.session()),
+  ]);
+  assert.equal(concurrentGuest.user.id, guestA.user.id, 'Concurrent tabs share one cookie-owned identity');
+  assert.equal(sqlite.prepare('SELECT count(*) AS n FROM guests').get().n, 1, 'Web Locks prevent concurrent first-load duplicate guests');
   const cookies = await contextA.cookies(apiOrigin);
   const bearer = cookies.find(cookie => cookie.name === '__Host-quiet_guest');
   assert.ok(bearer, 'Browser must accept actual secure Set-Cookie from handler');

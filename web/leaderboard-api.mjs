@@ -22,9 +22,11 @@ export function normalizeNickname(value) {
   return nickname;
 }
 
-export function createLeaderboardClient({ apiBase, fetchImpl = globalThis.fetch, location = globalThis.location } = {}) {
+export function createLeaderboardClient({ apiBase, fetchImpl = globalThis.fetch, location = globalThis.location,
+  locks = globalThis.navigator?.locks } = {}) {
   const base = normalizeApiBase(apiBase, location);
   let csrfToken = '';
+  let sessionFlight = null;
   async function request(path, { method = 'GET', body, idempotencyKey, signal } = {}) {
     if (!base) throw new LeaderboardError('공유 리더보드 서버가 아직 연결되지 않았습니다.');
     const headers = { Accept: 'application/json' };
@@ -49,12 +51,43 @@ export function createLeaderboardClient({ apiBase, fetchImpl = globalThis.fetch,
     if (typeof data.csrfToken === 'string') csrfToken = data.csrfToken;
     return data;
   }
+  async function withGuestLock(action) {
+    // Serialize cookie-changing requests across same-origin tabs. Without
+    // Web Locks keep the game/read-only board usable, but do not race creates.
+    if (!locks?.request) throw new LeaderboardError('이 브라우저에서 게스트를 연결할 수 없습니다. 최신 브라우저로 다시 시도해 주세요.');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    try {
+      return await locks.request(`quiet-guest:${base}`, { mode: 'exclusive', signal: controller.signal },
+        () => action(controller.signal));
+    } catch (error) {
+      if (error instanceof LeaderboardError) throw error;
+      throw new LeaderboardError('게스트 연결을 완료하지 못했습니다. 잠시 뒤 다시 시도해 주세요.');
+    } finally { clearTimeout(timeout); }
+  }
+  async function session() {
+    if (!sessionFlight) {
+      sessionFlight = withGuestLock(async signal => {
+        const created = await request('/v1/session', { method: 'POST', body: {}, signal });
+        // A blocked cookie must not look connected or trigger silent repeated
+        // guest creation. Read the cookie-owned identity before accepting it.
+        const restored = await request('/v1/me', { signal });
+        if (!created.user?.id || restored.user?.id !== created.user.id) throw new LeaderboardError('게스트 연결을 확인할 수 없습니다. 다시 시도해 주세요.');
+        return restored;
+      });
+    }
+    const pending = sessionFlight;
+    try { return await pending; }
+    finally { if (sessionFlight === pending) sessionFlight = null; }
+  }
   return {
     enabled: !!base,
-    session: () => request('/v1/session', { method: 'POST', body: {} }),
+    session,
     me: () => request('/v1/me'),
     rename: nickname => request('/v1/me', { method: 'PATCH', body: { nickname: normalizeNickname(nickname) } }),
-    remove: async () => { const result = await request('/v1/me', { method: 'DELETE' }); csrfToken = ''; return result; },
+    remove: () => withGuestLock(async signal => {
+      const result = await request('/v1/me', { method: 'DELETE', signal }); csrfToken = ''; return result;
+    }),
     startRun: mode => request('/v1/runs', { method: 'POST', body: { mode } }),
     finishRun: (id, result, key) => request(`/v1/runs/${encodeURIComponent(id)}/result`, {
       method: 'POST', body: result, idempotencyKey: key }),

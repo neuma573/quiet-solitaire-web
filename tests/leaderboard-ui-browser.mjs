@@ -8,6 +8,7 @@ let profile = { id: 'server-stable-id', nickname: '고요한여우123', xp: 50 }
 const requests = [];
 const hostile = '<img src=x onerror=window.__nicknameXss=true>';
 const address = 'https://quiet-leaderboard.test/';
+let sessionStatus = 200;
 async function fixtureRoute(route) {
   const req = route.request();
   const url = new URL(req.url());
@@ -29,7 +30,9 @@ async function fixtureRoute(route) {
       assert.equal(headers.origin, address.replace(/\/$/, ''));
       if (url.pathname !== '/api/v1/session') assert.equal(headers['x-csrf-token'], 'csrf-test');
     }
-    if (url.pathname === '/api/v1/session') return send({ user: profile, csrfToken: 'csrf-test' });
+    if (url.pathname === '/api/v1/session') return sessionStatus === 200
+      ? send({ user: profile, csrfToken: 'csrf-test' }) : send({ private: 'must not render server details' }, sessionStatus);
+    if (url.pathname === '/api/v1/me' && req.method() === 'GET') return send({ user: profile, csrfToken: 'csrf-test' });
     if (url.pathname === '/api/v1/me' && req.method() === 'PATCH') { profile = { ...profile, nickname: body.nickname }; return send({ user: profile }); }
     if (url.pathname === '/api/v1/me' && req.method() === 'DELETE') { profile = null; return route.fulfill({ status: 204, body: '' }); }
     if (url.pathname === '/api/v1/runs') return send({ run: { id: 'server-run', mode: body.mode } });
@@ -53,7 +56,18 @@ try {
   // Every browser request is fulfilled in process: no external or local-network access is needed.
   await page.route('**/*', fixtureRoute);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
-  await page.goto(address); await page.getByRole('button', { name: '순위 · 마이페이지' }).click();
+  await page.goto(address);
+  await page.waitForFunction(() => window.QuietLeaderboardBridge.profile()?.id === 'server-stable-id');
+  assert.equal(requests.filter(req => req.path === '/api/v1/session').length, 1, 'Initial page load automatically connects once');
+  await page.evaluate(async () => {
+    const { bootLeaderboard } = await import('/leaderboard.mjs');
+    await Promise.all([bootLeaderboard(), bootLeaderboard()]);
+  });
+  assert.equal(await page.locator('.ql-root').count(), 1, 'Repeated boot calls cannot mount duplicate UIs');
+  assert.equal(requests.filter(req => req.path === '/api/v1/session').length, 1);
+  await page.getByRole('button', { name: '순위 · 마이페이지' }).click();
+  assert.equal(await page.getByRole('button', { name: '동의하고 참여', exact: true }).count(), 0);
+  assert.equal(await page.getByText('누적 XP 순위 · 클라이언트 신고 기록으로, 검증된 경쟁 순위는 아닙니다.', { exact: true }).count(), 0);
   await page.getByRole('cell', { name: hostile, exact: true }).waitFor();
   assert.equal(await page.locator('.ql-dialog').evaluate(el => el.scrollTop), 0, 'Launcher must open at the ranking table');
   assert.equal(await page.locator('.ql-board').evaluate(el => el.offsetTop < document.querySelector('.ql-profile').offsetTop), true);
@@ -63,8 +77,6 @@ try {
   const invalidCompletion = { type: 'completed', attemptId: 'a'.repeat(32), mode: { difficulty: 'normal', draw: 3, scoring: 'standard' }, score: 1000, elapsedMs: 120000, moves: 120, won: true };
   await page.evaluate(event => window.QuietLeaderboardBridge.emit(JSON.stringify(event)), invalidCompletion);
   assert.equal(requests.some(req => req.path.endsWith('/result')), false);
-  await page.getByRole('button', { name: '동의하고 참여', exact: true }).click();
-  await page.waitForFunction(() => window.QuietLeaderboardBridge.profile()?.id === 'server-stable-id');
   const name = page.getByRole('textbox', { name: '닉네임', exact: true });
   await name.fill('새로운 닉네임'); await page.getByRole('button', { name: '닉네임 저장' }).click();
   await page.waitForFunction(() => window.QuietLeaderboardBridge.profile()?.nickname === '새로운 닉네임');
@@ -88,9 +100,25 @@ try {
   await page.locator('.ql-dialog').waitFor({ state: 'visible' });
   assert.equal(await name.evaluate(element => element === document.activeElement), true, 'Native My Page event must focus nickname');
   if (process.env.LEADERBOARD_SCREENSHOT) await page.screenshot({ path: process.env.LEADERBOARD_SCREENSHOT.replace(/\.png$/, '-my-page.png') });
-  await page.getByRole('button', { name: '게스트와 순위 기록 삭제', exact: true }).click();
+  await page.getByRole('button', { name: '나의 모든 기록 삭제', exact: true }).click();
+  assert.equal(requests.some(req => req.method === 'DELETE'), false, 'Opening the confirmation does not delete');
+  await page.getByRole('button', { name: '취소', exact: true }).click();
+  await page.getByRole('button', { name: '나의 모든 기록 삭제', exact: true }).click();
   await page.getByRole('button', { name: '삭제하기', exact: true }).click();
   await page.waitForFunction(() => window.QuietLeaderboardBridge.profile() === null);
+  await page.getByRole('button', { name: '새로고침', exact: true }).click();
+  assert.equal(requests.filter(req => req.path === '/api/v1/session').length, 1, 'Deletion must not immediately recreate a guest');
   assert.deepEqual(errors, []);
-  console.log('Browser overlay passed: 320px layout, keyboard dismissal/focus, nickname XSS text, stable identity, consent, single result, My Page and deletion.');
+  sessionStatus = 503;
+  const failedPage = await browser.newPage({ viewport: { width: 320, height: 568 } });
+  await failedPage.route('**/*', fixtureRoute);
+  await failedPage.goto(address);
+  await failedPage.getByRole('button', { name: '순위 · 마이페이지' }).click();
+  await failedPage.locator('.ql-error').waitFor({ state: 'visible' });
+  assert.ok(!(await failedPage.locator('.ql-error').textContent()).includes('private'));
+  assert.equal(await failedPage.locator('canvas').count(), 1, 'Connection failure never replaces the game canvas');
+  await failedPage.getByRole('button', { name: '닫기', exact: true }).click();
+  await failedPage.locator('canvas').click({ position: { x: 10, y: 10 } });
+  assert.equal(await failedPage.evaluate(() => window.QuietLeaderboardBridge.profile()), null);
+  console.log('Browser overlay passed: automatic connection, single boot, 320px layout, keyboard focus, nickname XSS text, stable identity, single result and confirmed deletion without immediate recreation.');
 } finally { await browser.close(); }
