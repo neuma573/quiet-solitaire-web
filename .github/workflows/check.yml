@@ -33,6 +33,7 @@ jobs:
         run: |
           node tests/leaderboard-page-browser.mjs --screenshots "$RUNNER_TEMP/leaderboard-page"
           node tests/leaderboard-ui-browser.mjs
+          node tests/profile-focus-browser.mjs
           node tests/leaderboard-api-browser.mjs
       - name: Retain failed leaderboard page screenshots only
         if: failure()

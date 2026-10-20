@@ -260,11 +260,12 @@ export function mountLeaderboard({ document = globalThis.document, window = glob
     window.dispatchEvent(new window.CustomEvent('quiet-leaderboard-profile', { detail: profile && { ...profile } }));
   } });
   function open(profileFocus = false) {
-    if (!dialog.open) { previousFocus = document.activeElement; dialog.showModal(); close.focus(); }
+    if (!dialog.open) { previousFocus = document.activeElement; dialog.showModal(); close.focus({ preventScroll: true }); }
     if (profileFocus !== true) dialog.scrollTop = 0;
     if (profileFocus && client.enabled) {
-      profileSection.scrollIntoView({ block: 'start' });
-      if (service.profile) input.focus();
+      // My Page is navigation, not a request to edit or open the mobile keyboard.
+      // Scroll only the dialog, without panning the page behind it.
+      dialog.scrollTop = profileSection.offsetTop;
     }
     void service.refreshBoard();
   }
@@ -274,7 +275,7 @@ export function mountLeaderboard({ document = globalThis.document, window = glob
     try { await fn(); } catch (caught) { service.state.error = caught.message; service.changed(); }
   };
   launcher.addEventListener('click', () => open()); close.addEventListener('click', dismiss);
-  dialog.addEventListener('close', () => { confirmDelete.hidden = true; previousFocus?.focus?.(); });
+  dialog.addEventListener('close', () => { confirmDelete.hidden = true; previousFocus?.focus?.({ preventScroll: true }); });
   form.addEventListener('submit', guarded(() => service.rename(input.value)));
   refresh.addEventListener('click', guarded(async () => {
     if (!service.participating && !service.deleted && !service.connectionBlocked) await service.join();
