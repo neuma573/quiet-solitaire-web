@@ -8,8 +8,8 @@
   <style>
     html, body { margin: 0; width: 100%; height: 100%; }
     body { display: flex; align-items: center; justify-content: center; overflow: hidden; background: #e9e9e9; }
-    #phone { position: relative; flex: none; width: 390px; height: 760px; transform: scale(var(--phone-scale, 1)); }
-    #canvas { display: block; width: 390px; height: 760px; border: 0; background: #f5f5f5; touch-action: none; }
+    #phone { position: fixed; width: 390px; height: 760px; }
+    #canvas { display: block; width: 100%; height: 100%; border: 0; background: #f5f5f5; touch-action: none; }
     #canvas:focus { outline: none; }
     /* The game's My Page opens the overlay; a floating button would cover HUD counters. */
     #phone .ql-launcher { display: none; }
@@ -32,23 +32,40 @@
   <script src="$GODOT_URL"></script>
   <script>
     const canvas = document.getElementById('canvas');
+    const phone = document.getElementById('phone');
     function fitPhone() {
       const density = window.devicePixelRatio || 1;
       const viewport = window.visualViewport;
-      const width = viewport?.width ?? window.innerWidth;
-      const height = viewport?.height ?? window.innerHeight;
-      // Grow narrow portrait views while preserving desktop size and the full
-      // 390x760 board on short/landscape viewports.
-      const maximum = width <= 600 && height > width ? Infinity : 1;
-      const scale = Math.min(maximum, width / 390, height / 760);
-      // Round up in 39x76 blocks: enough pixels for the enlarged display,
-      // with the exact logical aspect ratio and at most 39px oversampling.
-      const blocks = Math.ceil(10 * density * Math.max(1, scale));
-      const pixelsWide = 39 * blocks;
-      const pixelsHigh = 76 * blocks;
+      // Layout dimensions stay stable during pinch zoom. A visual viewport at
+      // scale 1 can still become shorter when browser controls or a keyboard open.
+      const visual = viewport && Math.abs(viewport.scale - 1) < 0.01 ? viewport : null;
+      const width = document.documentElement.clientWidth || window.innerWidth;
+      const height = Math.min(document.documentElement.clientHeight || window.innerHeight,
+        visual?.height ?? Infinity);
+      const portrait = width <= 600 && height > width;
+      const scale = Math.min(portrait ? Infinity : 1, width / 390, height / 760);
+      let displayWidth = 390 * scale, displayHeight = 760 * scale;
+      let pixelsWide, pixelsHigh;
+      if (portrait) {
+        // Godot's existing canvas_items/expand layout grows its logical width
+        // instead of clipping the board or stretching card shapes.
+        displayWidth = width;
+        pixelsWide = Math.max(1, Math.ceil(displayWidth * density));
+        pixelsHigh = Math.max(1, Math.floor(height * pixelsWide / displayWidth));
+        // Match the CSS and backing aspect exactly. Pixel rounding can leave
+        // less than one device pixel vertically, never horizontal gutters.
+        displayHeight = displayWidth * pixelsHigh / pixelsWide;
+      } else {
+        const blocks = Math.ceil(10 * density * Math.max(1, scale));
+        pixelsWide = 39 * blocks;
+        pixelsHigh = 76 * blocks;
+      }
       if (canvas.width !== pixelsWide) canvas.width = pixelsWide;
       if (canvas.height !== pixelsHigh) canvas.height = pixelsHigh;
-      document.getElementById('phone').style.setProperty('--phone-scale', scale);
+      phone.style.width = `${displayWidth}px`;
+      phone.style.height = `${displayHeight}px`;
+      phone.style.left = `${(width - displayWidth) / 2 + (visual?.offsetLeft ?? 0)}px`;
+      phone.style.top = `${(height - displayHeight) / 2 + (visual?.offsetTop ?? 0)}px`;
     }
     fitPhone();
     window.addEventListener('resize', fitPhone);

@@ -1,6 +1,5 @@
 import hashlib
 import importlib.util
-import io
 import json
 import os
 from pathlib import Path
@@ -42,11 +41,14 @@ class WebBuildTests(unittest.TestCase):
             (web / name).parent.mkdir(parents=True, exist_ok=True)
             (web / name).write_bytes((ROOT / "web" / name).read_bytes())
         manifest = json.loads((ROOT / "web/font.json").read_text())
-        self.downloads = {}
+        self.font_assets = []
         for role, config in manifest.items():
             data = ("font fixture: " + role).encode()
-            self.downloads[config["url"]] = data
             config["sha256"] = hashlib.sha256(data).hexdigest()
+            asset = web / config["path"]
+            asset.parent.mkdir(parents=True, exist_ok=True)
+            asset.write_bytes(data)
+            self.font_assets.append(asset)
         (web / "font.json").write_text(json.dumps(manifest))
         self.output = self.root / "site"
         self.stages = []
@@ -55,14 +57,11 @@ class WebBuildTests(unittest.TestCase):
     def snapshot(self):
         return {p.relative_to(self.source).as_posix(): p.read_bytes() for p in self.source.rglob("*") if p.is_file()}
 
-    def download(self, url, **_options):
-        return io.BytesIO(self.downloads[url])
-
     def checked(self, command, project, log, _timeout=300, *, env):
         self.stages.append(log.name)
         self.copies.append(project)
         config = (project / "project.godot").read_text()
-        self.assertTrue((project / "web-fonts/Arimo-Regular.ttf").is_file())
+        self.assertTrue((project / "web-fonts/NanumSquareR.ttf").is_file())
         self.assertTrue((project / "web-fonts/NotoSansCJKkr-Regular.otf").is_file())
         self.assertIn(str(project / "web-fonts"), Path(env["FONTCONFIG_FILE"]).read_text())
         for name in ("scripts/game.gd", "scenes/game.tscn", "test/rules.gd"):
@@ -84,14 +83,17 @@ class WebBuildTests(unittest.TestCase):
             for name in ("index.html", "index.js", "index.wasm", "index.pck"):
                 (self.output / name).write_bytes(b"runtime fixture")
 
-    def run_build(self, checked=None, overlay_error=None):
+    def run_build(self, checked=None, overlay_error=None, caption_error=None, caption_effect=None):
         with patch.object(build, "ROOT", self.pipeline), \
-                patch.object(build.urllib.request, "urlopen", side_effect=self.download), \
                 patch.object(build.subprocess, "check_output", side_effect=["4.7.2.stable.official.test", "a" * 40]), \
+                patch.object(build, "validate_source_contract") as source_contract, \
+                patch.object(build, "apply_caption_overlay", side_effect=caption_error or caption_effect) as caption, \
                 patch.object(build, "apply_overlay", side_effect=overlay_error) as overlay, \
                 patch.object(build, "checked", side_effect=checked or self.checked), \
                 patch.object(build, "audit") as audit:
             build.build(self.source, self.output, "godot", "b" * 40, None)
+            source_contract.assert_called_once_with(self.copies[-1], source_sha="a" * 40)
+            caption.assert_called_once_with(self.copies[-1], source_sha="a" * 40)
             overlay.assert_called_once_with(self.copies[-1], source_sha="a" * 40)
         return audit
 
@@ -108,7 +110,32 @@ class WebBuildTests(unittest.TestCase):
                      "leaderboard/index.html", "leaderboard/page.css", "leaderboard/page.mjs"):
             self.assertEqual((self.output / name).read_bytes(), (ROOT / "web" / name).read_bytes())
         self.assertFalse((self.output / "leaderboard-compatibility.json").exists())
+        self.assertFalse((self.output / "caption-compatibility.json").exists())
         audit.assert_called_once_with(self.output / "index.pck")
+
+    def test_caption_guard_refuses_before_source_execution_or_export(self):
+        with self.assertRaisesRegex(RuntimeError, "caption fixture rejected"):
+            self.run_build(caption_error=RuntimeError("caption fixture rejected"))
+        self.assertEqual(self.stages, [])
+        self.assertEqual(self.snapshot(), self.before)
+        self.assertFalse(any(self.output.iterdir()))
+
+    def test_caption_overlay_precedes_regression_and_patched_copy_is_exported(self):
+        visited = []
+
+        def caption(project, *, source_sha):
+            self.assertEqual(source_sha, "a" * 40)
+            self.assertEqual(self.stages, [])
+            (project / "caption-fixture.txt").write_text("web caption fixture")
+            visited.append(project)
+
+        def checked(command, project, log, timeout=300, *, env):
+            self.assertEqual((project / "caption-fixture.txt").read_text(), "web caption fixture")
+            self.checked(command, project, log, timeout, env=env)
+
+        self.run_build(checked=checked, caption_effect=caption)
+        self.assertEqual(visited, [self.copies[-1]])
+        self.assertEqual(self.snapshot(), self.before)
 
     def test_regression_failure_prevents_export_and_keeps_source_intact(self):
         def fail_tests(command, project, log, timeout=300, *, env):
@@ -123,11 +150,35 @@ class WebBuildTests(unittest.TestCase):
         self.assertFalse(any(self.output.iterdir()))
 
     def test_corrupt_font_stops_before_running_source_code(self):
-        self.downloads = dict.fromkeys(self.downloads, b"corrupted download")
+        self.font_assets[0].write_bytes(b"corrupted bundled font")
         with self.assertRaisesRegex(RuntimeError, "font checksum mismatch"):
             self.run_build()
         self.assertEqual(self.stages, [])
         self.assertEqual(self.snapshot(), self.before)
+
+    def test_missing_bundled_font_stops_before_source_code(self):
+        self.font_assets[0].unlink()
+        with self.assertRaisesRegex(RuntimeError, "Bundled Web font is missing or unsafe"):
+            self.run_build()
+        self.assertEqual(self.stages, [])
+        self.assertEqual(self.snapshot(), self.before)
+
+    def test_symlinked_font_cannot_read_outside_the_bundle(self):
+        outside = self.root / "outside-font.ttf"
+        self.font_assets[0].rename(outside)
+        self.font_assets[0].symlink_to(outside)
+        with self.assertRaisesRegex(RuntimeError, "Bundled Web font is missing or unsafe"):
+            self.run_build()
+        self.assertEqual(self.stages, [])
+
+    def test_font_filename_cannot_escape_the_disposable_font_directory(self):
+        path = self.pipeline / "web/font.json"
+        manifest = json.loads(path.read_text())
+        manifest["primary"]["filename"] = "../outside.ttf"
+        path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(RuntimeError, "Bundled Web font is missing or unsafe"):
+            self.run_build()
+        self.assertEqual(self.stages, [])
 
     def test_unreviewed_source_hooks_prevent_export(self):
         with self.assertRaisesRegex(RuntimeError, "leaderboard review required"):

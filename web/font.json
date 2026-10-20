@@ -1,14 +1,18 @@
 {
   "primary": {
-    "url": "https://raw.githubusercontent.com/googlefonts/Arimo/4a6255f269916ae7ad3fc2706b0935e7621396b8/fonts/ttf/Arimo-Regular.ttf",
-    "sha256": "41b22bc8f0b51f932825d37bc55b5eb6ba67dfe599a626e4aff2b43b624f9f8c",
-    "filename": "Arimo-Regular.ttf",
+    "path": "fonts/NanumSquareR.ttf",
+    "filename": "NanumSquareR.ttf",
+    "sha256": "5a51deae5237435d9a0bc0cc6cc30619a914b29801f895698cfdacadcad06e94",
+    "source_url": "https://hangeul.naver.com/hangeul_static/webfont/zips/nanum-square.zip",
+    "archive_sha256": "8a9f4ce7638feb73cde7adfebc2ec4f2dcee4bcebbb07e0fa1aae02f7340f3e8",
+    "version": "1.000; 160623_01",
     "license": "SIL Open Font License 1.1"
   },
   "fallback": {
-    "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/Korean/NotoSansCJKkr-Regular.otf",
     "sha256": "6bcb2a0703aa137e874fc2dffa85f6c21ba9a67fa329e81b8c801663af7e992a",
     "filename": "NotoSansCJKkr-Regular.otf",
-    "license": "SIL Open Font License 1.1"
+    "license": "SIL Open Font License 1.1",
+    "source_url": "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/Korean/NotoSansCJKkr-Regular.otf",
+    "path": "fonts/NotoSansCJKkr-Regular.otf"
   }
 }

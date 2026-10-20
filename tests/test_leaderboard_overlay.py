@@ -87,6 +87,27 @@ class LeaderboardOverlayTests(unittest.TestCase):
             self.apply()
         self.assertEqual(self.snapshot(), before)
 
+    def test_original_and_prepared_layout_contracts_are_checked_separately(self):
+        path = self.project / "scripts/example.gd"
+        prepared = path.read_text() + "# Reviewed Web layout change only\n"
+        self.manifest["prepared_files"] = {"scripts/example.gd": hashlib.sha256(prepared.encode()).hexdigest()}
+        self.write_manifest()
+        overlay.validate_source_contract(self.project, source_sha=self.sha)
+        with self.assertRaisesRegex(RuntimeError, "Source hooks or XP rules changed"):
+            self.apply()
+        path.write_text(prepared)
+        with self.assertRaisesRegex(RuntimeError, "Source hooks or XP rules changed"):
+            overlay.validate_source_contract(self.project, source_sha=self.sha)
+        self.apply()
+        self.assertEqual(path.read_text(), prepared)
+
+    def test_unexpected_prepared_contract_path_is_rejected_before_write(self):
+        self.manifest["prepared_files"] = {"unreviewed.gd": "0" * 64}
+        self.write_manifest()
+        with self.assertRaisesRegex(RuntimeError, "prepared contract is incomplete"):
+            self.apply()
+        self.assertEqual(self.snapshot(), self.original)
+
     def test_git_checkout_or_descendant_cannot_be_mutated(self):
         (self.root / ".git").mkdir()
         with self.assertRaisesRegex(RuntimeError, "outside a Git checkout"):
@@ -138,6 +159,12 @@ class LeaderboardBridgeTests(unittest.TestCase):
         # Independent fake game nodes exercise observer behavior without copying upstream source.
         files = {
             "project.godot": 'config_version=5\n[application]\nconfig/name="Bridge fixture"\n',
+            "scripts/visuals.gd": '''extends RefCounted
+const BOARD_ROW_GAP: float = 36.0
+const CARD_ASPECT_RATIO: float = 1.48
+const GAME_SIDE_MARGIN: float = 8.0
+const GAP: float = 2.0
+''',
             "scripts/model.gd": '''extends RefCounted
 var difficulty: String = "normal"
 var draw_count: int = 3
