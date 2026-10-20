@@ -28,13 +28,23 @@ class CaptionOverlayTests(unittest.TestCase):
         self.original = ("extends RefCounted\n"
                          "func left(safe, V):\n\treturn ceili(safe.position.x + V.START_MARGIN)\n"
                          "func right(safe, size, V):\n\treturn ceili(size.x - safe.end.x + V.START_MARGIN)\n")
-        self.expected = self.original.replace("V.START_MARGIN)", "V.START_MARGIN - 3.0)")
+        self.expected = self.original
+        for old, new in overlay.REPLACEMENTS["scripts/mode_selection.gd"]:
+            self.expected = self.expected.replace(old, new)
+        self.main = self.project / "scripts/main.gd"
+        self.main_original = "extends Node\nfunc resize_buttons():\n\tfor button in buttons:\n\t\tbutton.custom_minimum_size = V.touch_size(button)\n"
+        self.main_expected = self.main_original
+        for old, new in overlay.REPLACEMENTS["scripts/main.gd"]:
+            self.main_expected = self.main_expected.replace(old, new)
+        self.main.write_text(self.main_original)
         self.target.write_text(self.original)
         self.pipeline = self.root / "pipeline"
         (self.pipeline / "web").mkdir(parents=True)
         self.sha = "a" * 40
-        self.manifest = {"source_sha": self.sha, "before_sha256": digest(self.original),
-                         "after_sha256": digest(self.expected)}
+        self.manifest = {"source_sha": self.sha, "files": {
+            "scripts/mode_selection.gd": {"before_sha256": digest(self.original), "after_sha256": digest(self.expected)},
+            "scripts/main.gd": {"before_sha256": digest(self.main_original), "after_sha256": digest(self.main_expected)},
+        }}
         self.write_manifest()
         self.patch = patch.object(overlay, "ROOT", self.pipeline)
         self.patch.start()
@@ -49,8 +59,9 @@ class CaptionOverlayTests(unittest.TestCase):
     def test_applies_both_margins_without_changing_other_content(self):
         self.apply()
         self.assertEqual(self.target.read_text(), self.expected)
+        self.assertEqual(self.main.read_text(), self.main_expected)
         self.assertEqual({p.relative_to(self.project).as_posix() for p in self.project.rglob("*") if p.is_file()},
-                         {"scripts/mode_selection.gd"})
+                         {"scripts/mode_selection.gd", "scripts/main.gd"})
 
     def test_unreviewed_or_malformed_revision_refuses_before_write(self):
         for sha in ("b" * 40, "a" * 39, "a" * 40 + "\n"):
@@ -70,16 +81,22 @@ class CaptionOverlayTests(unittest.TestCase):
                      self.original + self.original, self.expected):
             with self.subTest(text=text):
                 self.target.write_text(text)
-                self.manifest["before_sha256"] = digest(text)
+                self.manifest["files"]["scripts/mode_selection.gd"]["before_sha256"] = digest(text)
                 self.write_manifest()
                 with self.assertRaisesRegex(RuntimeError, "Caption patch conditions changed"):
                     self.apply()
                 self.assertEqual(self.target.read_text(), text)
 
     def test_changed_expected_result_refuses_both_edits_before_write(self):
-        self.manifest["after_sha256"] = "0" * 64
+        self.manifest["files"]["scripts/mode_selection.gd"]["after_sha256"] = "0" * 64
         self.write_manifest()
         with self.assertRaisesRegex(RuntimeError, "Caption patch result changed"):
+            self.apply()
+        self.assertEqual(self.target.read_text(), self.original)
+
+    def test_second_contract_failure_never_partially_patches_first_file(self):
+        self.main.write_text(self.main_original + "# changed\n")
+        with self.assertRaisesRegex(RuntimeError, "Caption source changed"):
             self.apply()
         self.assertEqual(self.target.read_text(), self.original)
 

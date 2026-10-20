@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+from xml.sax.saxutils import escape
 
 
 def main():
@@ -16,9 +17,16 @@ def main():
     pack = args.directory.resolve() / "index.pck"
     script = Path(__file__).resolve().parents[1] / "tests/responsive-layout.gd"
     diagnostics = Path(tempfile.mkdtemp(prefix="quiet-responsive-private-"))
+    # Browser SystemFont cannot resolve host-installed fonts. Force the same
+    # fallback path while loading font resources from the audited PCK itself.
+    (diagnostics / "empty-fonts").mkdir()
+    fontconfig = diagnostics / "fontconfig.conf"
+    fontconfig.write_text('<fontconfig><dir>' + escape(str(diagnostics / "empty-fonts"))
+                          + '</dir><cachedir>' + escape(str(diagnostics / "font-cache")) + '</cachedir></fontconfig>')
     result = subprocess.run([args.godot, "--headless", "--main-pack", str(pack), "--script", str(script),
                              "--log-file", str(diagnostics / "engine.log"), "--", str(diagnostics)],
-                            capture_output=True, text=True, timeout=120)
+                            capture_output=True, text=True, timeout=120,
+                            env=dict(os.environ, FONTCONFIG_FILE=str(fontconfig)))
     output = result.stdout + result.stderr
     (diagnostics / "private.log").write_text(output)
     events = [json.loads(line.removeprefix("QUIET_RESPONSIVE "))
@@ -38,7 +46,7 @@ def main():
         failures = [{"case":e["case"], "message":e["message"]} for e in events if e["event"] == "failure"]
         raise SystemExit(f"Compiled responsive layout verification failed; private diagnostics: {diagnostics}; assertions: {json.dumps(failures)}")
     print(f"Compiled responsive layout passed: {expected} light/dark and English/Japanese cases; "
-          f"{summaries[0]['checks']} checks; full-width menus/profile, reachable statistics, "
+          f"{summaries[0]['checks']} checks; pinned NanumSquare/CJK captions, full-width menus/profile, reachable statistics, "
           "six hidden + thirteen exposed cards, >=14px headers at >=568px height, "
           "old header preserved below that, real strip drag and one Undo")
 

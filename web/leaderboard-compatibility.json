@@ -10,5 +10,8 @@
     "scripts/player_level.gd": "c55b2f70478488b8da5e4f94f1f76804156964f8e6158457ed87f3d380ea8c63",
     "scripts/klondike_statistics.gd": "047e384c672f66f990511a2774538a1b84a44fac089b7598768f04c9bf781470",
     "scripts/visuals.gd": "4ea010dffa2f883b5f64d681d96703f8df8e56149c6f61db5053fd7249316d1b"
+  },
+  "prepared_files": {
+    "scripts/main.gd": "a4da01654985cf65997f1bfb8f6816d930c1e99d2a61c3096d81b2372d95d705"
   }
 }
