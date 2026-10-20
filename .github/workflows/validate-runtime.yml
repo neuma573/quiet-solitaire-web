@@ -43,6 +43,8 @@ jobs:
         run: |
           node scripts/smoke.mjs --directory "$RUNNER_TEMP/site" --density 1 --screenshot "$RUNNER_TEMP/screenshots/smoke-1.png"
           node scripts/smoke.mjs --directory "$RUNNER_TEMP/site" --density 2 --screenshot "$RUNNER_TEMP/screenshots/smoke-2.png"
+      - name: Verify standalone leaderboard in the actual production export
+        run: node tests/leaderboard-page-browser.mjs --directory "$RUNNER_TEMP/site" --screenshots "$RUNNER_TEMP/screenshots/leaderboard"
       - name: Verify compiled My Page and guest API integration
         run: node tests/leaderboard-export-browser.mjs --directory "$RUNNER_TEMP/site" --screenshots "$RUNNER_TEMP/screenshots/profile"
       - name: Retain audited runtime and browser evidence only

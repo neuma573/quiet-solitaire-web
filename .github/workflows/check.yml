@@ -21,3 +21,20 @@ jobs:
           node-version: '22'
       - name: Test webhook and isolated leaderboard
         run: node --test tests/*.test.mjs
+      - name: Install locked browser verification dependencies
+        run: |
+          npm ci --ignore-scripts
+          npx playwright install --with-deps chromium
+      - name: Verify exported leaderboard page and existing browser clients
+        run: |
+          node tests/leaderboard-page-browser.mjs --screenshots "$RUNNER_TEMP/leaderboard-page"
+          node tests/leaderboard-ui-browser.mjs
+          node tests/leaderboard-api-browser.mjs
+      - name: Retain leaderboard page screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leaderboard-page-${{ github.sha }}
+          path: ${{ runner.temp }}/leaderboard-page/*.png
+          retention-days: 1
+          if-no-files-found: ignore

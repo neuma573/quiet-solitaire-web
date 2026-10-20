@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3f5ef">
+  <meta name="description" content="Quiet Solitaire의 누적 XP 리더보드. 상위 25명의 순위와 닉네임, XP를 확인하세요.">
+  <title>리더보드 · Quiet Solitaire</title>
+  <link rel="stylesheet" href="./page.css">
+  <script type="module" src="./page.mjs"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">본문으로 건너뛰기</a>
+  <div class="page">
+    <header class="site-header">
+      <a class="brand" href="../"><span class="brand-mark" aria-hidden="true">♠</span> Quiet Solitaire</a>
+      <a class="back-link" href="../"><span aria-hidden="true">←</span> 게임으로</a>
+    </header>
+    <main id="main">
+      <div class="intro">
+        <p class="eyebrow">누적 XP · TOP 25</p>
+        <h1>리더보드</h1>
+        <p class="intro-note">한 판씩 쌓아가는, 나만의 조용한 기록.</p>
+      </div>
+      <section class="board" aria-labelledby="board-title">
+        <div class="board-heading">
+          <div><h2 id="board-title">누적 XP 순위</h2><p id="board-summary" role="status" aria-live="polite">XP가 높은 순으로 표시합니다.</p></div>
+          <button id="refresh" type="button" disabled>새로고침</button>
+        </div>
+        <div id="board-content" aria-busy="true">
+          <div id="board-status" class="state" role="status" aria-live="polite" aria-atomic="true">
+            <span class="state-mark" aria-hidden="true">♧</span>
+            <p id="state-title">순위를 불러오는 중입니다…</p>
+            <p id="state-description">잠시만 기다려 주세요.</p>
+          </div>
+          <p id="board-error" class="error" role="alert" hidden></p>
+          <table id="rankings" hidden>
+            <caption class="sr-only">누적 XP 상위 25명, XP 내림차순</caption>
+            <colgroup><col class="rank-column"><col><col class="xp-column"></colgroup>
+            <thead><tr><th scope="col">순위</th><th scope="col">닉네임</th><th scope="col">XP</th></tr></thead>
+            <tbody id="ranking-rows"></tbody>
+          </table>
+        </div>
+        <noscript><p class="no-script">순위를 확인하려면 브라우저에서 JavaScript를 켜 주세요.</p>
+          <style>#board-status, #refresh { display: none; }</style></noscript>
+      </section>
+      <aside class="about" aria-label="순위 안내">
+        <p>게임에서 리더보드에 참여한 뒤 새로 시작한 게임의 승리 XP가 누적됩니다.</p>
+        <p>클라이언트 신고 기록이며, 검증된 경쟁 순위는 아닙니다.</p>
+      </aside>
+    </main>
+    <footer>가볍게 한 판, 차분하게 한 걸음.</footer>
+  </div>
+</body>
+</html>
