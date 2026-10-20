@@ -3,6 +3,7 @@ extends Node
 
 const GAME_SCRIPT: String = "res://scripts/main.gd"
 const PAGE_SCRIPT: String = "res://scripts/statistics_page.gd"
+const RESULTS_SCRIPT: String = "res://scripts/victory_results.gd"
 const BOARD_SCRIPT: String = "res://scripts/board.gd"
 const PROFILE_SCRIPT: String = "res://scripts/profile_header.gd"
 const V = preload("res://scripts/visuals.gd")
@@ -45,7 +46,7 @@ func _scan(node: Node) -> void:
 		_scan(child)
 
 func _node_added(node: Node) -> void:
-	if _script_path(node) in [GAME_SCRIPT, PAGE_SCRIPT]:
+	if _script_path(node) in [GAME_SCRIPT, PAGE_SCRIPT, RESULTS_SCRIPT]:
 		_attach.call_deferred(weakref(node))
 
 func _attach(reference: WeakRef) -> void:
@@ -53,9 +54,23 @@ func _attach(reference: WeakRef) -> void:
 	if node == null or not node.is_inside_tree():
 		return
 	if _script_path(node) == GAME_SCRIPT:
+		_use_web_number_font(node, &"_counter_font")
 		_attach_game(node)
 	elif _script_path(node) == PAGE_SCRIPT:
 		_attach_page(node as Control)
+	elif _script_path(node) == RESULTS_SCRIPT:
+		_use_web_number_font(node, &"_number_font")
+
+func _use_web_number_font(node: Node, property: StringName) -> void:
+	if _window == null:
+		return
+	var font: FontVariation = node.get(property) as FontVariation
+	if font == null:
+		return
+	var web_theme: Theme = load("res://web-fonts/theme.tres") as Theme
+	if web_theme != null and web_theme.default_font != null:
+		# Keep tnum while inheriting the Web font's direct Nanum/CJK fallbacks.
+		font.base_font = web_theme.default_font
 
 func _attach_game(root: Node) -> void:
 	if root == _game_root:
