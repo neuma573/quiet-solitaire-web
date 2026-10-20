@@ -49,19 +49,15 @@ jobs:
         if: steps.source.outputs.changed == 'true'
         with:
           node-version: '22'
+          cache: npm
       - name: Install locked browser verification dependencies
         if: steps.source.outputs.changed == 'true'
         run: |
           npm ci --ignore-scripts
           npx playwright install --with-deps chromium
-      - name: Verify fixed phone runtime at standard and high pixel density
+      - name: Verify representative mobile and desktop runtime
         if: steps.source.outputs.changed == 'true'
-        run: |
-          node scripts/smoke.mjs --directory "$RUNNER_TEMP/site" --density 1
-          node scripts/smoke.mjs --directory "$RUNNER_TEMP/site" --density 2
-      - name: Verify profile popup touch selection and input recovery
-        if: steps.source.outputs.changed == 'true'
-        run: node tests/profile-input-browser.mjs --directory "$RUNNER_TEMP/site"
+        run: python3 scripts/measure.py core-browser -- node tests/runtime-core-browser.mjs --directory "$RUNNER_TEMP/site"
       - name: Confirm main has not advanced during the build
         if: steps.source.outputs.changed == 'true'
         id: fresh
