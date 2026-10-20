@@ -134,6 +134,10 @@ try {
   await failedPage.getByRole('button', { name: '순위 · 마이페이지' }).click();
   await failedPage.locator('.ql-error').waitFor({ state: 'visible' });
   assert.ok(!(await failedPage.locator('.ql-error').textContent()).includes('private'));
+  const failedCreates = requests.filter(req => req.path === '/api/v1/session').length;
+  for (let i = 0; i < 3; i++) await failedPage.getByRole('button', { name: '새로고침', exact: true }).click();
+  assert.equal(requests.filter(req => req.path === '/api/v1/session').length, failedCreates,
+    'A potentially committed 503 cannot create another guest on board refresh');
   assert.equal(await failedPage.locator('canvas').count(), 1, 'Connection failure never replaces the game canvas');
   await failedPage.getByRole('button', { name: '닫기', exact: true }).click();
   await failedPage.locator('canvas').click({ position: { x: 10, y: 10 } });

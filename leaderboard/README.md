@@ -158,9 +158,13 @@ Boot captures it before loading config and cancels on early pagehide; a late
 config response cannot start a session from a suspended page. If locks, browser
 storage or cookies are unavailable, or the network
 fails, the game and read-only board remain usable; no retry loop creates more
-guests. A failed cookie verification stays blocked for that page lifecycle,
-including repeated board refreshes; changing cookie settings requires a page
-reload. The board refresh control can retry transient connection failures. The standalone
+guests. A failed cookie verification or an unconfirmed creation response
+(transport/parse failure or 5xx) stays blocked for that page lifecycle,
+including repeated board refreshes. If creation succeeds but its cookie check
+cannot complete, that page is also blocked from another creation POST.
+Changing cookie settings or retrying an uncertain connection requires a page
+reload. The board refresh control can retry known rejected session requests or
+lock acquisition failures before a request was issued. The standalone
 ranking page remains read-only and does not itself create guests.
 
 There is no separate participation button or in-game introductory/verification

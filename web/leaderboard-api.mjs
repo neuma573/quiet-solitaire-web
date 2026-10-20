@@ -35,7 +35,7 @@ export function createLeaderboardClient({ apiBase, fetchImpl = globalThis.fetch,
   const base = normalizeApiBase(apiBase, location);
   let csrfToken = '';
   let sessionFlight = null;
-  let cookieFailure = null;
+  let sessionFailure = null;
   function hasDeletion() {
     if (!guestLifecycle.storage) return false;
     try { return (guestLifecycle.storage.getItem(GUEST_DELETION_KEY) ?? '') !== guestLifecycle.generation; }
@@ -81,24 +81,41 @@ export function createLeaderboardClient({ apiBase, fetchImpl = globalThis.fetch,
     } finally { clearTimeout(timeout); }
   }
   async function session() {
-    if (cookieFailure) throw cookieFailure;
+    if (sessionFailure) throw sessionFailure;
     if (!sessionFlight) {
       sessionFlight = withGuestLock(async signal => {
         if (hasDeletion()) {
           const error = new LeaderboardError('다른 탭에서 기록이 삭제되었습니다. 페이지를 새로고침해 주세요.');
           error.reason = 'guest_deleted'; throw error;
         }
-        const created = await request('/v1/session', { method: 'POST', body: {}, signal });
+        const unconfirmedSession = () => {
+          sessionFailure = new LeaderboardError('게스트 연결 결과를 확인하지 못했습니다. 페이지를 새로고침해 주세요.');
+          sessionFailure.reason = 'session_unconfirmed'; return sessionFailure;
+        };
+        let created;
+        try { created = await request('/v1/session', { method: 'POST', body: {}, signal }); }
+        catch (error) {
+          // A transport/parse failure or 5xx can follow a committed INSERT
+          // whose Set-Cookie never reached the browser. Never repeat it here.
+          if (!error.status || error.status >= 500) throw unconfirmedSession();
+          throw error;
+        }
+        if (!created?.user?.id) throw unconfirmedSession();
         // A blocked cookie must not look connected or trigger silent repeated
         // guest creation. Read the cookie-owned identity before accepting it.
         const blockedCookie = () => {
-          cookieFailure = new LeaderboardError('게스트 쿠키를 확인할 수 없습니다. 쿠키 설정을 확인한 뒤 페이지를 새로고침해 주세요.');
-          cookieFailure.reason = 'cookie_unavailable'; return cookieFailure;
+          sessionFailure = new LeaderboardError('게스트 쿠키를 확인할 수 없습니다. 쿠키 설정을 확인한 뒤 페이지를 새로고침해 주세요.');
+          sessionFailure.reason = 'cookie_unavailable'; return sessionFailure;
         };
         let restored;
         try { restored = await request('/v1/me', { signal }); }
-        catch (error) { if ([401, 403].includes(error.status)) throw blockedCookie(); throw error; }
-        if (!created.user?.id || restored.user?.id !== created.user.id) throw blockedCookie();
+        catch (error) {
+          if ([401, 403].includes(error.status)) throw blockedCookie();
+          // Creation succeeded; an unavailable cookie check must not lead
+          // back to another potentially unauthenticated creation POST.
+          throw unconfirmedSession();
+        }
+        if (restored?.user?.id !== created.user.id) throw blockedCookie();
         return restored;
       });
     }

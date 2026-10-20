@@ -109,13 +109,49 @@ test('blocked cookies and unavailable locks fail without accepting identity or s
   await assert.rejects(unavailable.session(), error => error instanceof LeaderboardError && /브라우저/.test(error.message));
 });
 
-test('a cookie-verification failure stays blocked for this lifecycle instead of creating unreachable guests on refresh', async () => {
-  let connections = 0;
-  const error = new LeaderboardError('쿠키 설정을 확인해 주세요.'); error.reason = 'cookie_unavailable';
-  const { service } = fixture({ session: async () => { connections++; throw error; } });
-  await service.join(); await service.join(); service.leave(); await service.join();
-  assert.equal(connections, 1); assert.equal(service.connectionBlocked, true);
-  assert.equal(service.profile, null); assert.equal(service.participating, false);
+test('cookie and ambiguous session failures stay blocked across refresh and suspension for this lifecycle', async () => {
+  for (const reason of ['cookie_unavailable', 'session_unconfirmed']) {
+    let connections = 0;
+    const error = new LeaderboardError('페이지를 새로고침해 주세요.'); error.reason = reason;
+    const { service } = fixture({ session: async () => { connections++; throw error; } });
+    await service.join(); await service.join(); service.leave(); await service.join();
+    assert.equal(connections, 1); assert.equal(service.connectionBlocked, true);
+    assert.equal(service.profile, null); assert.equal(service.participating, false);
+  }
+});
+
+test('unconfirmed creation or verification never repeats a potentially committed session POST', async () => {
+  for (const phase of ['post-network', 'post-503', 'post-json', 'verify-network', 'verify-503', 'verify-429']) {
+    let creates = 0;
+    const client = createLeaderboardClient({ apiBase: 'https://api.example', guestLifecycle: guestLifecycle(),
+      locks: { request: async (_name, _options, action) => action() }, fetchImpl: async (_url, options) => {
+        if (options.method === 'POST') {
+          creates++; // The server may already have committed this guest.
+          if (phase === 'post-network') throw new TypeError('response lost before Set-Cookie');
+          if (phase === 'post-503') return new Response('', { status: 503 });
+          if (phase === 'post-json') return new Response('truncated JSON');
+          return Response.json({ user, csrfToken: 'unverified-csrf' }, { status: 201 });
+        }
+        if (phase === 'verify-network') throw new TypeError('verification response lost');
+        return new Response('', { status: phase === 'verify-429' ? 429 : 503 });
+      } });
+    const concurrent = await Promise.allSettled([client.session(), client.session()]);
+    assert.ok(concurrent.every(result => result.status === 'rejected' && result.reason.reason === 'session_unconfirmed'), phase);
+    await assert.rejects(client.session(), error => error.reason === 'session_unconfirmed');
+    assert.equal(creates, 1, phase);
+  }
+});
+
+test('a known rejected session POST can retry without accepting an unverified identity', async () => {
+  let posts = 0;
+  const client = createLeaderboardClient({ apiBase: 'https://api.example', guestLifecycle: guestLifecycle(),
+    locks: { request: async (_name, _options, action) => action() }, fetchImpl: async (_url, options) => {
+      if (options.method === 'POST' && ++posts === 1) return new Response('', { status: 429 });
+      return Response.json({ user, csrfToken: 'verified-csrf' });
+    } });
+  await assert.rejects(client.session(), error => error.status === 429);
+  assert.deepEqual((await client.session()).user, user);
+  assert.equal(posts, 2);
 });
 
 test('automatic connection failure keeps game events local and can recover only for a new attempt', async () => {

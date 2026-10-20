@@ -52,7 +52,7 @@ export class LeaderboardService {
       } catch (error) {
         if (this.epoch === epoch) {
           if (error.reason === 'guest_deleted') { this.deleted = true; this.profile = null; this.participating = false; }
-          if (error.reason === 'cookie_unavailable') this.connectionBlocked = true;
+          if (['cookie_unavailable', 'session_unconfirmed'].includes(error.reason)) this.connectionBlocked = true;
           this.state.connectionError = error.message;
         }
       }
