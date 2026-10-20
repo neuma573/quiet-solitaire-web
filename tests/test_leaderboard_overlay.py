@@ -256,12 +256,14 @@ func _run() -> void:
     game_root.queue_free()
     await process_frame
     _check(observer.events.size() == 6 and observer.events[5].type == "cancelled", "Leaving gameplay cancels unfinished runs")
+    TranslationServer.set_locale("ko")
     var page: Control = load("res://scripts/statistics_page.gd").new()
     root.add_child(page)
     observer._attach_page(page)
     observer._attach_page(page)
     _check(page._content.get_child_count() == 2, "My Page receives one web-owned button")
     var button: Button = page._content.get_node("WebLeaderboardProfile") as Button
+    _check(button.text == "랭킹", "Korean My Page button uses the concise ranking label")
     button.emit_signal("pressed")
     _check(observer.events.size() == 7 and observer.events[6].type == "my-page", "My Page opens the nickname and leaderboard overlay")
     page.transitioning = true

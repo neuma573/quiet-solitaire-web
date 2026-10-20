@@ -202,7 +202,7 @@ func _refresh_page(reference: WeakRef) -> void:
 func _caption(key: String) -> String:
 	var language: String = TranslationServer.get_locale().substr(0, 2)
 	if language == "ko":
-		return "리더보드 · 닉네임" if key == "profile" else "웹 게스트"
+		return "랭킹" if key == "profile" else "웹 게스트"
 	if language == "ja":
 		return "ランキング・ニックネーム" if key == "profile" else "ウェブゲスト"
 	return "Leaderboard & nickname" if key == "profile" else "Web guest"
