@@ -31,7 +31,7 @@ const entries = [
   { rank: 4, nickname: '작은 구름', xp: 9120 },
   { rank: 5, nickname: '초록빛 오후', xp: 7640 },
 ];
-let mode = 'disabled'; let configValue = ''; let pendingResolve;
+let mode = 'disabled'; let configValue = ''; let pendingResolve, pendingArrivalResolve;
 let release = Promise.resolve(); let fixture = board(entries);
 const requests = [], failures = [];
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_BIN
@@ -51,7 +51,7 @@ try {
       }
       if (url.pathname === apiPath) {
         assert.equal(url.search, '?limit=25');
-        if (mode === 'pending') { await release; }
+        if (mode === 'pending') { pendingArrivalResolve?.(); await release; }
         if (mode === 'error') return send({ private: 'secret backend stack' }, 503);
         if (mode === 'invalid-json') return route.fulfill({ contentType: 'application/json', body: 'null' });
         return send(fixture);
@@ -119,9 +119,13 @@ try {
   assert.equal(await page.locator('#refresh').evaluate(button => button === document.activeElement), true, 'Retry preserves keyboard focus');
   // A stalled fetch must become a recoverable error rather than spin forever.
   mode = 'pending'; release = new Promise(resolve => { pendingResolve = resolve; });
+  // Loading begins before config fetch completes. Wait for the initial API
+  // request to reach the route before counting subsequent keyboard requests.
+  const pendingArrival = new Promise(resolve => { pendingArrivalResolve = resolve; });
   await page.clock.install(); await page.locator('#refresh').focus();
   await page.keyboard.press('Enter'); await state('loading');
   assert.equal(await page.locator('#refresh').evaluate(button => button === document.activeElement), true, 'Loading preserves keyboard focus');
+  await pendingArrival; pendingArrivalResolve = undefined;
   const beforeRepeatedKeys = requestCount();
   await page.keyboard.press('Enter'); await page.keyboard.press('Space');
   assert.equal(requestCount(), beforeRepeatedKeys, 'Repeated keys cannot duplicate a load');
