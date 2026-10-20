@@ -1,6 +1,6 @@
 // Optional compiled Godot Web / real guest API integration:
 // node tests/leaderboard-export-browser.mjs --directory <export> [--screenshots <directory>]
-// Every URL is intercepted in process. The export and its disabled config remain unchanged.
+// Every URL is intercepted in process. The export and its public config remain unchanged.
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { readFile, stat, mkdir, writeFile } from 'node:fs/promises';
@@ -19,7 +19,8 @@ const screenshotDirectory = resolve(option('--screenshots') || join(tmpdir(), `q
 await mkdir(screenshotDirectory, { recursive: true });
 assert.ok((await stat(join(directory, 'index.html'))).isFile(), 'Actual exported index.html is required');
 const configBefore = await readFile(join(directory, 'leaderboard-config.json'));
-assert.equal(JSON.parse(configBefore).apiBase, '', 'Export must keep its public API config disabled on disk');
+assert.deepEqual(configBefore, await readFile(new URL('../web/leaderboard-config.json', import.meta.url)),
+  'Export must preserve the reviewed public API config on disk');
 
 const origin = 'https://quiet-leaderboard.test';
 const apiOrigin = 'https://api.quiet-leaderboard.test';
@@ -216,4 +217,5 @@ try {
   console.error('Failure screenshots: ' + screenshotDirectory);
   throw error;
 } finally { await browser.close(); sqlite.close(); }
+
 
