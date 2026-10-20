@@ -28,6 +28,7 @@ def main():
     summaries = [event for event in events if event["event"] == "summary"]
     expected = next((event["expected"] for event in events if event["event"] == "start"), 0)
     failed = (result.returncode != 0 or re.search(r"SCRIPT ERROR:|\bERROR:", output) or not expected
+              or any(e["event"] == "failure" for e in events)
               or len(summaries) != 1 or len(starts) != expected or len(ends) != expected
               or {e["case"] for e in starts} != {e["case"] for e in ends}
               or len({e["case"] for e in starts}) != expected or any(e["checks"] < 1 for e in ends)

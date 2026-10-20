@@ -58,11 +58,13 @@ try {
     ['touch-retina', { width: 390, height: 760 }, true, 2, 'light'],
     ['touch-retina-dark', { width: 390, height: 760 }, true, 2, 'dark'],
     ['touch-scaled', { width: 320, height: 568 }, true, 1, 'light'],
-    ['touch-short-dark', { width: 390, height: 664 }, true, 2, 'dark'],
+    ['touch-short-dark', { width: 390, height: 664 }, true, 3, 'dark'],
     ['touch-wide', { width: 430, height: 932 }, true, 2, 'light'],
     ['touch-square-dark', { width: 600, height: 601 }, true, 1, 'dark'],
+    ['mouse-narrow-fractional', { width: 393, height: 719 }, false, 1.25, 'light'],
     ['mouse-desktop', { width: 1440, height: 1000 }, false, 1, 'light'],
   ]) {
+    const beforeConfigResponses = configResponses;
     page = await browser.newPage({ viewport: { width:390, height:760 }, deviceScaleFactor: density, hasTouch: touch,
       isMobile: touch, locale: 'ko-KR', colorScheme });
     page.on('pageerror', error => errors.push(error.message));
@@ -85,6 +87,7 @@ try {
     await page.goto(address, { waitUntil: 'load', timeout: 120_000 });
     await page.waitForFunction(() => !document.getElementById('status'), null, { timeout: 120_000 });
     await page.waitForTimeout(3500); // Engine readiness precedes the native menu's startup transition.
+    if (directory) assert.ok(configResponses > beforeConfigResponses, `${name}: loads its isolated disabled API configuration`);
     const canvas = page.locator('#canvas');
     // Select the game's own appearance setting. Browser color preference alone
     // does not activate Godot's fallback dark theme on every Web build.
@@ -104,7 +107,7 @@ try {
     const frame = await canvas.boundingBox();
     const scale = Math.min(frame.width / 390, frame.height / 760);
     const logicalWidth = frame.width / scale, logicalHeight = frame.height / scale;
-    if (touch) {
+    if (viewport.width <= 600 && viewport.height > viewport.width) {
       assert.ok(Math.abs(frame.x) < 0.1 && Math.abs(frame.width - viewport.width) < 0.1,
         `${name}: actual canvas fills the available width`);
       assert.ok(frame.y >= 0 && frame.y + frame.height <= viewport.height + 0.1,
@@ -269,7 +272,7 @@ try {
     await page.close(); page = null;
     console.log(`Profile input passed: ${engine}/${name}; five difficulty options, HTML focus return, outside dismissal, Back, page recreation, single stock action/Undo`);
   }
-  if (directory) assert.ok(configResponses >= 4, 'Each input case must load the isolated disabled config');
+  if (directory) assert.ok(configResponses >= 8, 'Each input case must load the isolated disabled config');
   assert.deepEqual(errors, [], 'All JavaScript, Godot, audio and asset errors fail this real-server test');
 } catch (error) {
   if (page) await page.screenshot({ path: join(screenshots, 'failure.png') }).catch(() => {});
