@@ -9,6 +9,7 @@ var checks: int = 0
 var failures: int = 0
 var cases: int = 0
 var current: String
+var font_outlines_checked: bool = false
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -39,6 +40,24 @@ func mouse_click(control: Control) -> void:
 		event.position = point
 		event.pressed = pressed
 		root.push_input(event,true)
+
+func check_visible_glyphs(font: Font, text: String, language: String, expected_family: String) -> void:
+	var server: TextServer = TextServerManager.get_primary_interface()
+	var shaped: RID = server.create_shaped_text()
+	check(server.shaped_text_add_string(shaped, text, font.get_rids(), 16, {}, language), "Font can shape " + language)
+	check(server.shaped_text_shape(shaped), "Font shaping completes for " + language)
+	var glyphs: Array[Dictionary] = server.shaped_text_get_glyphs(shaped)
+	check(not glyphs.is_empty(), "Font returns visible glyphs for " + language)
+	for glyph: Dictionary in glyphs:
+		var valid: bool = glyph.font_rid.is_valid() and glyph.index > 0
+		if valid:
+			var contours: Dictionary = server.font_get_glyph_contours(glyph.font_rid, 16, glyph.index)
+			valid = not contours.get("points", PackedVector3Array()).is_empty()
+		check(valid, "Non-space glyph has an outline: %s index=%d" % [language, glyph.start])
+		if glyph.font_rid.is_valid():
+			check(server.font_get_name(glyph.font_rid) == expected_family,
+				"Glyph uses the intended family: %s index=%d" % [language, glyph.start])
+	server.free_rid(shaped)
 
 func _run() -> void:
 	var directory: String = OS.get_cmdline_user_args()[0]
@@ -120,8 +139,15 @@ func _run() -> void:
 			var families: Array[String] = []
 			for rid: RID in font.get_rids():
 				families.append(TextServerManager.get_primary_interface().font_get_name(rid))
-			check(families.size() >= 2 and families[0] == "NanumSquare"
+			check(families.size() >= 3 and families[0] == "QuietWebFontRouter" and families[1] == "NanumSquare"
 				and "Noto Sans CJK KR" in families, "Compiled captions use the pinned primary and CJK fallback")
+			if not font_outlines_checked:
+				check_visible_glyphs(font, "UndoPause", "en", "NanumSquare")
+				check_visible_glyphs(font, "돌아가기", "ko", "NanumSquare")
+				check_visible_glyphs(font, "日本語", "en", "Noto Sans CJK KR")
+				check_visible_glyphs(font, "日本語", "ko", "Noto Sans CJK KR")
+				check_visible_glyphs(font, "ゲームを選ぶ色違数字小重札ー", "ja", "Noto Sans CJK KR")
+				font_outlines_checked = true
 			var preview_bounds: Rect2 = mode._previews[0].get_global_rect()
 			for key: String in ["PREVIEW_STACK", "PREVIEW_REVEAL", "PREVIEW_FOUNDATION"]:
 				caption.text = tr(key)

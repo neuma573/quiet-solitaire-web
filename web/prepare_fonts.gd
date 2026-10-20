@@ -1,11 +1,27 @@
 extends SceneTree
 
 func _initialize() -> void:
+	var primary: FontFile = load("res://web-fonts/NanumSquareR.ttf")
+	if primary == null:
+		push_error("Could not load the verified NanumSquare font")
+		quit(1)
+		return
+	# NanumSquare advertises some Japanese/Han codepoints with empty outlines.
+	# Route those scripts to the existing CJK fallback without modifying TTF bytes.
+	for script: String in ["Hani", "Hira", "Kana"]:
+		primary.set_script_support_override(script, false)
+	primary.set_language_support_override("ja", false)
+	primary.allow_system_fallback = false
+	if ResourceSaver.save(primary, "res://web-fonts/nanum.res", ResourceSaver.FLAG_COMPRESS) != OK:
+		push_error("Could not save the Web primary font settings")
+		quit(1)
+		return
 	var font: FontFile = load("res://web-fonts/NotoSansCJKkr-Regular.otf")
 	if font == null:
 		push_error("Could not load the verified Web CJK font")
 		quit(1)
 		return
+	font.allow_system_fallback = false
 	# Use the font's proportional alternates for Japanese action labels.
 	font.opentype_feature_overrides = {TextServerManager.get_primary_interface().name_to_tag("palt"): 1}
 	# Godot includes every fallback's line metrics even for Latin-only labels.

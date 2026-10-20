@@ -63,7 +63,10 @@ class WebBuildTests(unittest.TestCase):
         config = (project / "project.godot").read_text()
         self.assertTrue((project / "web-fonts/NanumSquareR.ttf").is_file())
         self.assertTrue((project / "web-fonts/NotoSansCJKkr-Regular.otf").is_file())
-        self.assertIn(str(project / "web-fonts"), Path(env["FONTCONFIG_FILE"]).read_text())
+        fontconfig = Path(env["FONTCONFIG_FILE"])
+        self.assertIn(str(fontconfig.parent / "no-system-fonts"), fontconfig.read_text())
+        self.assertEqual(list((fontconfig.parent / "no-system-fonts").iterdir()), [])
+        self.assertNotIn(str(project / "web-fonts"), fontconfig.read_text())
         for name in ("scripts/game.gd", "scenes/game.tscn", "test/rules.gd"):
             self.assertEqual((project / name).read_bytes(), self.before[name])
         if log.name in ("bootstrap.private.log", "fonts.private.log"):

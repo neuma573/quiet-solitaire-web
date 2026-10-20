@@ -1,11 +1,17 @@
-[gd_resource type="Theme" load_steps=4 format=3]
+[gd_resource type="Theme" load_steps=5 format=3]
 
-[ext_resource type="FontFile" path="res://web-fonts/NanumSquareR.ttf" id="1"]
+[ext_resource type="FontFile" path="res://web-fonts/nanum.res" id="1"]
 [ext_resource type="FontFile" path="res://web-fonts/cjk.res" id="2"]
 
+[sub_resource type="FontFile" id="RoutingAnchor"]
+; Godot always tries the base font first. An empty anchor lets the real
+; fallback fonts' script priorities route mapped-but-empty Japanese glyphs.
+font_name = "QuietWebFontRouter"
+allow_system_fallback = false
+
 [sub_resource type="FontVariation" id="WebFont"]
-base_font = ExtResource("1")
-fallbacks = Array[Font]([ExtResource("2")])
+base_font = SubResource("RoutingAnchor")
+fallbacks = Array[Font]([ExtResource("1"), ExtResource("2")])
 
 [resource]
 default_font = SubResource("WebFont")
