@@ -76,12 +76,16 @@ try {
     await page.waitForFunction(() => !document.getElementById('status'), null, { timeout:120_000 });
     const canvas = page.locator('#canvas');
     const geometry = async () => {
-      await page.waitForFunction(() => {
+      const v = page.viewportSize();
+      await page.waitForFunction(({ width, height }) => {
         const c = document.getElementById('canvas'), r = c.getBoundingClientRect();
+        const portrait = width <= 600 && height > width;
         return r.width > 0 && r.height > 0 && Math.abs(c.width / c.height - r.width / r.height) < 0.0001
-          && c.width >= r.width * devicePixelRatio - 0.1 && c.height >= r.height * devicePixelRatio - 0.1;
-      }, null, { timeout:15_000 });
-      const box = await canvas.boundingBox(), v = page.viewportSize();
+          && c.width >= r.width * devicePixelRatio - 0.1 && c.height >= r.height * devicePixelRatio - 0.1
+          && r.x >= -0.1 && r.y >= -0.1 && r.right <= width + 0.1 && r.bottom <= height + 0.1
+          && (!portrait || (Math.abs(r.width - width) < 0.1 && Math.abs(r.x) < 0.1));
+      }, v, { timeout:15_000 });
+      const box = await canvas.boundingBox();
       assert.ok(box.x >= -0.1 && box.y >= -0.1 && box.x + box.width <= v.width + 0.1
         && box.y + box.height <= v.height + 0.1, `${name}: entire canvas fits visible viewport`);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);

@@ -3,6 +3,14 @@ export class LeaderboardError extends Error {
   constructor(message, status = 0) { super(message); this.name = 'LeaderboardError'; this.status = status; }
 }
 
+export const GUEST_DELETION_KEY = 'quiet-leaderboard:deletion-generation';
+export function captureGuestLifecycle(window = globalThis.window) {
+  try {
+    const storage = window?.localStorage;
+    return { storage, generation: storage?.getItem(GUEST_DELETION_KEY) ?? '' };
+  } catch { return { storage: null, generation: '' }; }
+}
+
 export function normalizeApiBase(value, location = globalThis.location) {
   if (typeof value !== 'string' || !value.trim()) return '';
   const url = new URL(value, location?.href ?? 'https://localhost/');
@@ -22,9 +30,17 @@ export function normalizeNickname(value) {
   return nickname;
 }
 
-export function createLeaderboardClient({ apiBase, fetchImpl = globalThis.fetch, location = globalThis.location } = {}) {
+export function createLeaderboardClient({ apiBase, fetchImpl = globalThis.fetch, location = globalThis.location,
+  locks = globalThis.navigator?.locks, guestLifecycle = captureGuestLifecycle() } = {}) {
   const base = normalizeApiBase(apiBase, location);
   let csrfToken = '';
+  let sessionFlight = null;
+  let sessionFailure = null;
+  function hasDeletion() {
+    if (!guestLifecycle.storage) return false;
+    try { return (guestLifecycle.storage.getItem(GUEST_DELETION_KEY) ?? '') !== guestLifecycle.generation; }
+    catch { return true; }
+  }
   async function request(path, { method = 'GET', body, idempotencyKey, signal } = {}) {
     if (!base) throw new LeaderboardError('공유 리더보드 서버가 아직 연결되지 않았습니다.');
     const headers = { Accept: 'application/json' };
@@ -37,8 +53,8 @@ export function createLeaderboardClient({ apiBase, fetchImpl = globalThis.fetch,
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
     } catch { throw new LeaderboardError('연결할 수 없습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.'); }
     if (!response.ok) {
-      const messages = { 400: '입력값이나 게임 기록을 확인해 주세요.', 401: '게스트 연결이 만료되었습니다. 다시 참여해 주세요.',
-        403: '게스트 연결을 확인할 수 없습니다. 다시 참여해 주세요.', 409: '이 게임 기록은 이미 처리되었거나 만료되었습니다.',
+      const messages = { 400: '입력값이나 게임 기록을 확인해 주세요.', 401: '게스트 연결이 만료되었습니다. 페이지를 새로고침해 주세요.',
+        403: '게스트 연결을 확인할 수 없습니다. 페이지를 새로고침해 주세요.', 409: '이 게임 기록은 이미 처리되었거나 만료되었습니다.',
         410: '이 게임 기록은 만료되었습니다.', 429: '요청이 많습니다. 잠시 뒤 다시 시도해 주세요.' };
       // Never render arbitrary server/proxy error text, which may contain operational details.
       throw new LeaderboardError(messages[response.status] ?? '서버에 연결할 수 없습니다. 잠시 뒤 다시 시도해 주세요.', response.status);
@@ -49,12 +65,76 @@ export function createLeaderboardClient({ apiBase, fetchImpl = globalThis.fetch,
     if (typeof data.csrfToken === 'string') csrfToken = data.csrfToken;
     return data;
   }
+  async function withGuestLock(action) {
+    // Serialize cookie-changing requests across same-origin tabs. Without
+    // Web Locks keep the game/read-only board usable, but do not race creates.
+    if (!locks?.request) throw new LeaderboardError('이 브라우저에서 게스트를 연결할 수 없습니다. 최신 브라우저로 다시 시도해 주세요.');
+    if (!guestLifecycle.storage) throw new LeaderboardError('브라우저 저장소를 사용할 수 없어 게스트를 연결하지 못했습니다.');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    try {
+      return await locks.request(`quiet-guest:${base}`, { mode: 'exclusive', signal: controller.signal },
+        () => action(controller.signal));
+    } catch (error) {
+      if (error instanceof LeaderboardError) throw error;
+      throw new LeaderboardError('게스트 연결을 완료하지 못했습니다. 잠시 뒤 다시 시도해 주세요.');
+    } finally { clearTimeout(timeout); }
+  }
+  async function session() {
+    if (sessionFailure) throw sessionFailure;
+    if (!sessionFlight) {
+      sessionFlight = withGuestLock(async signal => {
+        if (hasDeletion()) {
+          const error = new LeaderboardError('다른 탭에서 기록이 삭제되었습니다. 페이지를 새로고침해 주세요.');
+          error.reason = 'guest_deleted'; throw error;
+        }
+        const unconfirmedSession = () => {
+          sessionFailure = new LeaderboardError('게스트 연결 결과를 확인하지 못했습니다. 페이지를 새로고침해 주세요.');
+          sessionFailure.reason = 'session_unconfirmed'; return sessionFailure;
+        };
+        let created;
+        try { created = await request('/v1/session', { method: 'POST', body: {}, signal }); }
+        catch (error) {
+          // A transport/parse failure or 5xx can follow a committed INSERT
+          // whose Set-Cookie never reached the browser. Never repeat it here.
+          if (!error.status || error.status >= 500) throw unconfirmedSession();
+          throw error;
+        }
+        if (!created?.user?.id) throw unconfirmedSession();
+        // A blocked cookie must not look connected or trigger silent repeated
+        // guest creation. Read the cookie-owned identity before accepting it.
+        const blockedCookie = () => {
+          sessionFailure = new LeaderboardError('게스트 쿠키를 확인할 수 없습니다. 쿠키 설정을 확인한 뒤 페이지를 새로고침해 주세요.');
+          sessionFailure.reason = 'cookie_unavailable'; return sessionFailure;
+        };
+        let restored;
+        try { restored = await request('/v1/me', { signal }); }
+        catch (error) {
+          if ([401, 403].includes(error.status)) throw blockedCookie();
+          // Creation succeeded; an unavailable cookie check must not lead
+          // back to another potentially unauthenticated creation POST.
+          throw unconfirmedSession();
+        }
+        if (restored?.user?.id !== created.user.id) throw blockedCookie();
+        return restored;
+      });
+    }
+    const pending = sessionFlight;
+    try { return await pending; }
+    finally { if (sessionFlight === pending) sessionFlight = null; }
+  }
   return {
     enabled: !!base,
-    session: () => request('/v1/session', { method: 'POST', body: {} }),
+    session,
+    hasDeletion,
     me: () => request('/v1/me'),
     rename: nickname => request('/v1/me', { method: 'PATCH', body: { nickname: normalizeNickname(nickname) } }),
-    remove: async () => { const result = await request('/v1/me', { method: 'DELETE' }); csrfToken = ''; return result; },
+    remove: () => withGuestLock(async signal => {
+      // Non-secret lifecycle marker, never an ID, bearer, or recovery key.
+      // Write before DELETE so ambiguous responses still stop older tabs.
+      guestLifecycle.storage.setItem(GUEST_DELETION_KEY, crypto.randomUUID());
+      const result = await request('/v1/me', { method: 'DELETE', signal }); csrfToken = ''; return result;
+    }),
     startRun: mode => request('/v1/runs', { method: 'POST', body: { mode } }),
     finishRun: (id, result, key) => request(`/v1/runs/${encodeURIComponent(id)}/result`, {
       method: 'POST', body: result, idempotencyKey: key }),
