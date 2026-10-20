@@ -12,6 +12,7 @@ import tempfile
 import urllib.request
 from xml.sax.saxutils import escape
 from audit_export import audit
+from caption_overlay import apply_caption_overlay
 from leaderboard_overlay import apply_overlay
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -84,6 +85,9 @@ def build(source: Path, output: Path, godot: str, pipeline_sha: str, templates: 
         directory = Path(scratch)
         project = directory / "project"
         shutil.copytree(source, project, ignore=shutil.ignore_patterns(".git", ".godot", "builds", "__pycache__"))
+        # Match the 16px source captions to the pinned Web CJK font before any
+        # source regression runs. Export exactly this tested disposable copy.
+        apply_caption_overlay(project, source_sha=sha)
         environment = prepare_fonts(project, diagnostics)
         # A fresh checkout has no generated CSV translations yet. Import them before
         # loading the project's translation list, without masking any engine errors.

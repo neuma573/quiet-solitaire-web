@@ -1,0 +1,6 @@
+{
+  "source_sha": "35615547ec5ef09a61cb5bc260355677b1c71a9c",
+  "description": "Reviewed Web-only 16px CJK caption width correction: mode-selection side margins each 24 -> 21, leaving 348px at 390px. Original tests are unchanged. Review both complete file digests and exact patch conditions before updating.",
+  "before_sha256": "26b535132f677a535e79b09f6b640fa312b21091c0508c5cdf7784d9afcdf65f",
+  "after_sha256": "445fe66644b7a378adf57bffc995cb82d1ecde6e0e759bbd94c9962069452d91"
+}

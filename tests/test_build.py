@@ -84,14 +84,16 @@ class WebBuildTests(unittest.TestCase):
             for name in ("index.html", "index.js", "index.wasm", "index.pck"):
                 (self.output / name).write_bytes(b"runtime fixture")
 
-    def run_build(self, checked=None, overlay_error=None):
+    def run_build(self, checked=None, overlay_error=None, caption_error=None, caption_effect=None):
         with patch.object(build, "ROOT", self.pipeline), \
                 patch.object(build.urllib.request, "urlopen", side_effect=self.download), \
                 patch.object(build.subprocess, "check_output", side_effect=["4.7.2.stable.official.test", "a" * 40]), \
+                patch.object(build, "apply_caption_overlay", side_effect=caption_error or caption_effect) as caption, \
                 patch.object(build, "apply_overlay", side_effect=overlay_error) as overlay, \
                 patch.object(build, "checked", side_effect=checked or self.checked), \
                 patch.object(build, "audit") as audit:
             build.build(self.source, self.output, "godot", "b" * 40, None)
+            caption.assert_called_once_with(self.copies[-1], source_sha="a" * 40)
             overlay.assert_called_once_with(self.copies[-1], source_sha="a" * 40)
         return audit
 
@@ -108,7 +110,32 @@ class WebBuildTests(unittest.TestCase):
                      "leaderboard/index.html", "leaderboard/page.css", "leaderboard/page.mjs"):
             self.assertEqual((self.output / name).read_bytes(), (ROOT / "web" / name).read_bytes())
         self.assertFalse((self.output / "leaderboard-compatibility.json").exists())
+        self.assertFalse((self.output / "caption-compatibility.json").exists())
         audit.assert_called_once_with(self.output / "index.pck")
+
+    def test_caption_guard_refuses_before_source_execution_or_export(self):
+        with self.assertRaisesRegex(RuntimeError, "caption fixture rejected"):
+            self.run_build(caption_error=RuntimeError("caption fixture rejected"))
+        self.assertEqual(self.stages, [])
+        self.assertEqual(self.snapshot(), self.before)
+        self.assertFalse(any(self.output.iterdir()))
+
+    def test_caption_overlay_precedes_regression_and_patched_copy_is_exported(self):
+        visited = []
+
+        def caption(project, *, source_sha):
+            self.assertEqual(source_sha, "a" * 40)
+            self.assertEqual(self.stages, [])
+            (project / "caption-fixture.txt").write_text("web caption fixture")
+            visited.append(project)
+
+        def checked(command, project, log, timeout=300, *, env):
+            self.assertEqual((project / "caption-fixture.txt").read_text(), "web caption fixture")
+            self.checked(command, project, log, timeout, env=env)
+
+        self.run_build(checked=checked, caption_effect=caption)
+        self.assertEqual(visited, [self.copies[-1]])
+        self.assertEqual(self.snapshot(), self.before)
 
     def test_regression_failure_prevents_export_and_keeps_source_intact(self):
         def fail_tests(command, project, log, timeout=300, *, env):
