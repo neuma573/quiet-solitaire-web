@@ -34,17 +34,21 @@
     const canvas = document.getElementById('canvas');
     function fitPhone() {
       const density = window.devicePixelRatio || 1;
-      const pixelsWide = Math.round(390 * density);
-      const pixelsHigh = Math.round(760 * density);
-      if (canvas.width !== pixelsWide) canvas.width = pixelsWide;
-      if (canvas.height !== pixelsHigh) canvas.height = pixelsHigh;
       const viewport = window.visualViewport;
       const width = viewport?.width ?? window.innerWidth;
       const height = viewport?.height ?? window.innerHeight;
       // Grow narrow portrait views while preserving desktop size and the full
       // 390x760 board on short/landscape viewports.
       const maximum = width <= 600 && height > width ? Infinity : 1;
-      document.getElementById('phone').style.setProperty('--phone-scale', Math.min(maximum, width / 390, height / 760));
+      const scale = Math.min(maximum, width / 390, height / 760);
+      // Round up in 39x76 blocks: enough pixels for the enlarged display,
+      // with the exact logical aspect ratio and at most 39px oversampling.
+      const blocks = Math.ceil(10 * density * Math.max(1, scale));
+      const pixelsWide = 39 * blocks;
+      const pixelsHigh = 76 * blocks;
+      if (canvas.width !== pixelsWide) canvas.width = pixelsWide;
+      if (canvas.height !== pixelsHigh) canvas.height = pixelsHigh;
+      document.getElementById('phone').style.setProperty('--phone-scale', scale);
     }
     fitPhone();
     window.addEventListener('resize', fitPhone);
