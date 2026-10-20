@@ -28,7 +28,11 @@ export function mountPage({ document = globalThis.document, window = globalThis.
   function state(kind, heading, detail) {
     content.dataset.state = kind; content.setAttribute('aria-busy', String(kind === 'loading'));
     status.hidden = kind === 'ready'; title.textContent = heading; description.textContent = detail;
-    table.hidden = kind !== 'ready'; refresh.disabled = kind === 'loading' || kind === 'disabled';
+    table.hidden = kind !== 'ready';
+    // Native disabled blurs the active button in Chromium. Keep the loading
+    // control focusable; the current-request guard suppresses repeat activation.
+    refresh.disabled = kind === 'disabled';
+    refresh.setAttribute('aria-disabled', String(kind === 'loading' || kind === 'disabled'));
     refresh.textContent = kind === 'error' ? '다시 시도' : '새로고침';
   }
   async function load() {

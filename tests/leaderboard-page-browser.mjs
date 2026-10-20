@@ -119,8 +119,15 @@ try {
   assert.equal(await page.locator('#refresh').evaluate(button => button === document.activeElement), true, 'Retry preserves keyboard focus');
   // A stalled fetch must become a recoverable error rather than spin forever.
   mode = 'pending'; release = new Promise(resolve => { pendingResolve = resolve; });
-  await page.clock.install(); await page.locator('#refresh').click(); await state('loading');
+  await page.clock.install(); await page.locator('#refresh').focus();
+  await page.keyboard.press('Enter'); await state('loading');
+  assert.equal(await page.locator('#refresh').evaluate(button => button === document.activeElement), true, 'Loading preserves keyboard focus');
+  const beforeRepeatedKeys = requestCount();
+  await page.keyboard.press('Enter'); await page.keyboard.press('Space');
+  assert.equal(requestCount(), beforeRepeatedKeys, 'Repeated keys cannot duplicate a load');
+  await page.locator('.back-link').focus();
   await page.clock.runFor(10_100); await state('error');
+  assert.equal(await page.locator('.back-link').evaluate(link => link === document.activeElement), true, 'Completion does not steal focus after navigation');
   assert.ok((await page.getByRole('alert').textContent()).includes('늦어지고'));
   mode = 'ready'; pendingResolve(); await page.clock.resume();
   await page.locator('#refresh').click(); await state('ready');

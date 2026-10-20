@@ -19,8 +19,8 @@ h1 { margin: 0; font-size: clamp(30px, 5vw, 40px); letter-spacing: -1.5px; line-
 h2 { margin: 0; font-size: 17px; letter-spacing: -.5px; font-weight: 650; }
 #board-summary { margin: 6px 0 0; color: #526457; font-size: 12px; line-height: 1.5; }
 button { flex-shrink: 0; min-height: 44px; padding: 10px 14px; border: 1px solid #a3b4a6; border-radius: 10px; background: #fffefa; color: #285b43; font-family: inherit; font-size: 12px; font-weight: 600; line-height: 1.5; cursor: pointer; }
-button:hover:enabled { background: #edf3e9; }
-button:disabled { color: #6c7c70; cursor: default; opacity: .7; }
+button:hover:enabled:not([aria-disabled="true"]) { background: #edf3e9; }
+button:disabled, button[aria-disabled="true"] { color: #6c7c70; cursor: default; opacity: .7; }
 #board-content { min-height: 262px; }
 .state { padding: 48px 22px 52px; text-align: center; }
 .state-mark { display: block; margin-bottom: 14px; color: #53705b; font-size: 36px; line-height: 1; }
