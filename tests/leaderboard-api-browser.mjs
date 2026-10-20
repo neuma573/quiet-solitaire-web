@@ -38,8 +38,8 @@ async function routeAll(route) {
     assert.ok([origin, apiOrigin].includes(url.origin), 'Every test request must stay on intercepted test origins');
     if (url.pathname === '/') return route.fulfill({ contentType: 'text/html', body:
       `<!doctype html><meta charset="utf-8"><title>Real guest API test</title><body><script type="module">import {createLeaderboardClient} from "/leaderboard.mjs";window.client=createLeaderboardClient({apiBase:"${apiOrigin}/api"});window.ready=true;</script>` });
-    if (url.pathname === '/leaderboard.mjs') return route.fulfill({ contentType: 'application/javascript',
-      body: readFileSync(new URL('../web/leaderboard.mjs', import.meta.url), 'utf8') });
+    if (['/leaderboard.mjs', '/leaderboard-api.mjs'].includes(url.pathname)) return route.fulfill({ contentType: 'application/javascript',
+      body: readFileSync(new URL('../web' + url.pathname, import.meta.url), 'utf8') });
     if (url.pathname === '/leaderboard-config.json') return route.fulfill({ contentType: 'application/json', body: '{"apiBase":""}' });
     if (!url.pathname.startsWith('/api/')) return route.fulfill({ status: 404, body: '' });
     const headers = await request.allHeaders();

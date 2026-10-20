@@ -92,6 +92,32 @@ GitHub API가 dispatch를 거부하면 Worker는 502를 반환합니다. GitHub 
 - PWA·오프라인 캐시는 추가하지 않습니다. 원본과 동일하게 진행 중인 게임 재개 저장은 없으며 설정·통계 보존은 브라우저 IndexedDB 정책의 영향을 받습니다.
 - Chromium에서 실제 실행을 확인합니다. iPhone Safari의 성능·터치·안전 영역, VoiceOver는 별도 실기기 검증 대상입니다.
 
+## 독립 리더보드 페이지
+
+`/quiet-solitaire-web/leaderboard/`는 게임 엔진을 불러오지 않는 가벼운 반응형 순위 페이지입니다.
+데스크톱과 모바일에서 누적 XP 상위 25명의 순위·닉네임·XP를 표시합니다.
+게임의 마이페이지 리더보드에는 별도 페이지를 새 탭으로 여는 링크가 있고,
+순위 페이지에서는 상단의 **게임으로** 링크로 돌아갈 수 있습니다.
+
+- 기존 `GET /v1/leaderboard?limit=25` 응답을 읽기만 하며, 게스트 생성·가입·닉네임 변경은 하지 않습니다.
+- `web/leaderboard-config.json` 한 개를 게임과 공유합니다. `apiBase`가 비어 있으면
+  실제 순위 대신 서버 연결 준비 안내를 표시하고 API를 호출하지 않습니다. 샘플 순위는 게시하지 않습니다.
+- 불러오는 중·기록 없음·연결 오류·응답 시간 초과를 구분하며 오류 후 다시 시도할 수 있습니다.
+- 공개 파일은 `scripts/build.py`의 명시적 허용 목록으로만 복사합니다.
+  `web/leaderboard/`가 페이지이고, 저장소 루트의 `leaderboard/`는 비공개 배포용 서버 코드입니다.
+- 순위는 기존 서버의 XP 내림차순과 동점 순서를 유지합니다. 스키마나 순서가 잘못된 응답은 표시하지 않습니다.
+- 위 경로는 이 변경을 main에 반영하고 기존 배포 검사를 통과한 뒤 제공됩니다.
+
+페이지·API 응답 테스트와 실제 Chromium 검사는 다음 명령으로 실행합니다.
+브라우저 검사에 등장하는 순위는 가로챈 로컬 테스트 데이터이며 실제 순위가 아닙니다.
+
+```sh
+node --test tests/*.test.mjs
+node tests/leaderboard-page-browser.mjs
+# 전체 Godot 빌드 결과의 하위 경로와 자산 검사
+node tests/leaderboard-page-browser.mjs --directory /path/to/export
+```
+
 ## 웹 리더보드 (로컬 구현, 서버 연결 전)
 
 리더보드는 **누적 XP 내림차순**이며 순위·닉네임·XP만 표시합니다. 서버가 랜덤 닉네임과

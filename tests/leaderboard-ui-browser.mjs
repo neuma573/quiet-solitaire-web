@@ -17,7 +17,7 @@ async function fixtureRoute(route) {
       return route.fulfill({ contentType: 'text/html', body: '<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="leaderboard.css"><title>Overlay test</title><body style="margin:0"><div id="phone" style="position:relative;width:min(100vw,390px);height:100vh;background:#f5f5f5"><canvas aria-label="game" width="390" height="760"></canvas></div><script type="module" src="leaderboard.mjs"></script></body></html>' });
     }
     if (url.pathname === '/leaderboard-config.json') return send({ apiBase: address + 'api' });
-    if (['/leaderboard.mjs', '/leaderboard.css'].includes(url.pathname)) {
+    if (['/leaderboard.mjs', '/leaderboard-api.mjs', '/leaderboard.css'].includes(url.pathname)) {
       return route.fulfill({ contentType: url.pathname.endsWith('.css') ? 'text/css' : 'application/javascript',
         body: await readFile(new URL('../web' + url.pathname, import.meta.url), 'utf8') });
     }

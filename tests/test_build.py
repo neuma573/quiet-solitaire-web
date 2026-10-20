@@ -37,7 +37,9 @@ class WebBuildTests(unittest.TestCase):
         web.mkdir(parents=True)
         (self.pipeline / "godot-version.json").write_text('{"version":"4.7.2"}')
         for name in ("theme.tres", "export_presets.cfg", "FONT-LICENSE.txt", "leaderboard.mjs",
-                     "leaderboard.css", "leaderboard-config.json"):
+                     "leaderboard.css", "leaderboard-api.mjs", "leaderboard-config.json",
+                     "leaderboard/index.html", "leaderboard/page.css", "leaderboard/page.mjs"):
+            (web / name).parent.mkdir(parents=True, exist_ok=True)
             (web / name).write_bytes((ROOT / "web" / name).read_bytes())
         manifest = json.loads((ROOT / "web/font.json").read_text())
         self.downloads = {}
@@ -102,7 +104,8 @@ class WebBuildTests(unittest.TestCase):
         self.assertEqual(os.environ.get("FONTCONFIG_FILE"), inherited_fontconfig)
         self.assertTrue(all(not p.exists() for p in self.copies), "only the disposable copy is modified")
         self.assertEqual((self.output / "FONT-LICENSE.txt").read_bytes(), (ROOT / "web/FONT-LICENSE.txt").read_bytes())
-        for name in ("leaderboard.mjs", "leaderboard.css", "leaderboard-config.json"):
+        for name in ("leaderboard.mjs", "leaderboard.css", "leaderboard-api.mjs", "leaderboard-config.json",
+                     "leaderboard/index.html", "leaderboard/page.css", "leaderboard/page.mjs"):
             self.assertEqual((self.output / name).read_bytes(), (ROOT / "web" / name).read_bytes())
         self.assertFalse((self.output / "leaderboard-compatibility.json").exists())
         audit.assert_called_once_with(self.output / "index.pck")
@@ -132,3 +135,28 @@ class WebBuildTests(unittest.TestCase):
         self.assertEqual(self.stages, ["bootstrap.private.log", "fonts.private.log", "tests.private.log"])
         self.assertEqual(self.snapshot(), self.before)
         self.assertFalse(any(self.output.iterdir()))
+
+    def test_public_asset_allowlist_excludes_backend_and_source(self):
+        self.output.mkdir()
+        (self.pipeline / "web/leaderboard/private-secret.txt").write_text("must not publish")
+        with patch.object(build, "ROOT", self.pipeline):
+            build.copy_public_web_assets(self.output)
+        actual = {p.relative_to(self.output).as_posix() for p in self.output.rglob("*") if p.is_file()}
+        self.assertEqual(actual, set(build.PUBLIC_WEB_ASSETS))
+        self.assertEqual(json.loads((self.output / "leaderboard-config.json").read_text())["apiBase"], "")
+        self.assertIn('href="../"', (self.output / "leaderboard/index.html").read_text())
+
+    def test_public_assets_reject_missing_file_and_symlinked_page_directory(self):
+        page = self.pipeline / "web/leaderboard/page.mjs"
+        page.unlink()
+        with patch.object(build, "ROOT", self.pipeline):
+            with self.assertRaisesRegex(RuntimeError, "missing or unsafe"):
+                build.copy_public_web_assets(self.output)
+        page.write_text("fixture")
+        original = self.pipeline / "web/leaderboard"
+        renamed = self.pipeline / "web/elsewhere"
+        original.rename(renamed)
+        original.symlink_to(renamed, target_is_directory=True)
+        with patch.object(build, "ROOT", self.pipeline):
+            with self.assertRaisesRegex(RuntimeError, "missing or unsafe"):
+                build.copy_public_web_assets(self.output)

@@ -17,6 +17,27 @@ from leaderboard_overlay import apply_overlay
 ROOT = Path(__file__).resolve().parents[1]
 
 
+
+# Explicit browser-only allowlist. The repository's leaderboard/ directory is
+# the backend, not public website content, and must never be copied recursively.
+PUBLIC_WEB_ASSETS = (
+    "leaderboard.mjs", "leaderboard-api.mjs", "leaderboard.css", "leaderboard-config.json",
+    "leaderboard/index.html", "leaderboard/page.css", "leaderboard/page.mjs",
+)
+
+
+def copy_public_web_assets(output: Path) -> None:
+    web = ROOT / "web"
+    for name in PUBLIC_WEB_ASSETS:
+        asset = web / name
+        destination = output / name
+        if (asset.is_symlink() or asset.parent.is_symlink() or not asset.is_file()
+                or destination.is_symlink() or destination.parent.is_symlink()):
+            raise RuntimeError("Required public leaderboard asset is missing or unsafe")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(asset, destination)
+
+
 def checked(command: list[str], cwd: Path, log: Path, timeout: int = 300, *, env: dict | None = None) -> None:
     with log.open("w") as stream:
         result = subprocess.run(command, cwd=cwd, stdout=stream, stderr=subprocess.STDOUT,
@@ -120,11 +141,7 @@ def build(source: Path, output: Path, godot: str, pipeline_sha: str, templates: 
     audit(output / "index.pck")
     # Fixed public web assets only. Never publish the source compatibility
     # manifest, backend, credentials, diagnostics, or private source checkout.
-    for name in ("leaderboard.mjs", "leaderboard.css", "leaderboard-config.json"):
-        asset = ROOT / "web" / name
-        if asset.is_symlink() or not asset.is_file():
-            raise RuntimeError("Required public leaderboard asset is missing or unsafe")
-        shutil.copyfile(asset, output / name)
+    copy_public_web_assets(output)
     (output / ".nojekyll").touch()
     shutil.copyfile(ROOT / "web/FONT-LICENSE.txt", output / "FONT-LICENSE.txt")
     (output / "404.html").write_text('<!doctype html><html lang="en"><meta charset="utf-8"><title>Not found</title><p>Not found.</p></html>\n')
