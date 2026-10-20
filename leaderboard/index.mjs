@@ -63,7 +63,7 @@ async function body(request) {
   const buffer = new Uint8Array(bytes);
   let offset = 0;
   for (const chunk of chunks) { buffer.set(chunk, offset); offset += chunk.byteLength; }
-  try { return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(buffer)); }
+  try { return JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(buffer)); }
   catch { fail(400, 'invalid_json'); }
 }
 export function normalizeNickname(value) {
@@ -302,3 +302,4 @@ export async function cleanup(env, now = Date.now()) {
   ]);
 }
 export default { fetch: (request, env) => handle(request, env), scheduled: (_event, env, ctx) => ctx.waitUntil(cleanup(env)) };
+
