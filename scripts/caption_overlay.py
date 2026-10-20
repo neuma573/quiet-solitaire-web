@@ -6,8 +6,8 @@ import re
 ROOT = Path(__file__).resolve().parents[1]
 REPLACEMENTS = {
     "scripts/mode_selection.gd": (
-        ("safe.position.x + V.START_MARGIN)", 'safe.position.x + V.START_MARGIN - (4.0 if TranslationServer.get_locale().begins_with("ja") else 0.0))'),
-        ("size.x - safe.end.x + V.START_MARGIN)", 'size.x - safe.end.x + V.START_MARGIN - (4.0 if TranslationServer.get_locale().begins_with("ja") else 0.0))'),
+        ("safe.position.x + V.START_MARGIN)", 'safe.position.x + V.START_MARGIN - (1.0 if TranslationServer.get_locale().begins_with("ja") else 0.0))'),
+        ("size.x - safe.end.x + V.START_MARGIN)", 'size.x - safe.end.x + V.START_MARGIN - (1.0 if TranslationServer.get_locale().begins_with("ja") else 0.0))'),
     ),
     "scripts/main.gd": (
         ("\t\tbutton.custom_minimum_size = V.touch_size(button)\n",

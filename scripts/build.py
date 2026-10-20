@@ -63,11 +63,14 @@ def prepare_fonts(project: Path, diagnostics: Path) -> dict[str, str]:
         if hashlib.sha256(data).hexdigest() != config["sha256"]:
             raise RuntimeError("Web font checksum mismatch")
         (fonts / config["filename"]).write_bytes(data)
-    # SystemFont falls back to the project theme in Web. Isolate Fontconfig so
-    # Linux verification follows that path rather than using runner-installed fonts.
+    # Web SystemFont has no native fonts. An empty Fontconfig directory forces
+    # tests through the prepared theme resources, including script routing;
+    # discovering raw TTFs here would bypass those prepared FontFile settings.
+    no_system_fonts = diagnostics / "no-system-fonts"
+    no_system_fonts.mkdir()
     fontconfig = diagnostics / "fontconfig.conf"
     fontconfig.write_text('<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\n'
-                          '<fontconfig><dir>' + escape(str(fonts)) + '</dir><cachedir>'
+                          '<fontconfig><dir>' + escape(str(no_system_fonts)) + '</dir><cachedir>'
                           + escape(str(diagnostics / "font-cache")) + '</cachedir></fontconfig>\n')
     return dict(os.environ, FONTCONFIG_FILE=str(fontconfig))
 
