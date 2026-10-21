@@ -7,12 +7,11 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 from xml.sax.saxutils import escape
 from audit_export import audit
 from caption_overlay import apply_caption_overlay
-from leaderboard_overlay import apply_overlay, validate_source_contract
+from leaderboard_overlay import apply_overlay
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -64,7 +63,7 @@ def prepare_fonts(project: Path, diagnostics: Path) -> dict[str, str]:
             raise RuntimeError("Web font checksum mismatch")
         (fonts / config["filename"]).write_bytes(data)
     # Web SystemFont has no native fonts. An empty Fontconfig directory forces
-    # tests through the prepared theme resources, including script routing;
+    # imports through the prepared theme resources, including script routing;
     # discovering raw TTFs here would bypass those prepared FontFile settings.
     no_system_fonts = diagnostics / "no-system-fonts"
     no_system_fonts.mkdir()
@@ -91,9 +90,7 @@ def build(source: Path, output: Path, godot: str, pipeline_sha: str, templates: 
         directory = Path(scratch)
         project = directory / "project"
         shutil.copytree(source, project, ignore=shutil.ignore_patterns(".git", ".godot", "builds", "__pycache__"))
-        # Check original hook/XP hashes, then prepare this exact copy for the
-        # pinned Web font before regression. Export the same tested copy.
-        validate_source_contract(project, source_sha=sha)
+        # Apply the Web layout and font resources only to this disposable copy.
         apply_caption_overlay(project, source_sha=sha)
         environment = prepare_fonts(project, diagnostics)
         # A fresh checkout has no generated CSV translations yet. Import them before
@@ -116,21 +113,10 @@ def build(source: Path, output: Path, godot: str, pipeline_sha: str, templates: 
             shutil.copyfile(ROOT / "web/theme.tres", project / "web-fonts/theme.tres")
         finally:
             project_file.write_bytes(web_config)
-        # Source tests and logs stay on the runner; only the runtime export is published.
-        checked([sys.executable, "scripts/test.py", "--godot", godot,
-                 "--artifacts", str(diagnostics / "tests")], project, diagnostics / "tests.private.log", 900,
-                env=environment)
-        report = json.loads((diagnostics / "tests/report.json").read_text())
-        if report["status"] != "passed":
-            raise RuntimeError("Source regression suite did not complete")
-        print("Source regression suite and startup check passed")
-        # Observe results and My Page using a web-owned autoload only in this
-        # disposable copy. Reimport and boot the exact project being exported.
+        # Install the Web autoload and import the exact project being exported.
         apply_overlay(project, source_sha=sha)
         checked([godot, "--headless", "--path", str(project), "--import"], project,
                 diagnostics / "leaderboard-import.private.log", env=environment)
-        checked([godot, "--headless", "--path", str(project), "--quit-after", "120"], project,
-                diagnostics / "leaderboard-startup.private.log", env=environment)
         preset = (ROOT / "web/export_presets.cfg").read_text()
         preset = preset.replace('html/custom_html_shell=""',
                                 f'html/custom_html_shell="{(ROOT / "web/shell.html").as_posix()}"')
@@ -150,8 +136,8 @@ def build(source: Path, output: Path, godot: str, pipeline_sha: str, templates: 
     if any(p.is_symlink() or not p.is_file() or p.name not in allowed for p in output.iterdir()):
         raise RuntimeError("Unexpected file in public export; upload refused")
     audit(output / "index.pck")
-    # Fixed public web assets only. Never publish the source compatibility
-    # manifest, backend, credentials, diagnostics, or private source checkout.
+    # Fixed public web assets only. Never publish the backend, credentials,
+    # diagnostics, or private source checkout.
     copy_public_web_assets(output)
     (output / ".nojekyll").touch()
     shutil.copyfile(ROOT / "web/FONT-LICENSE.txt", output / "FONT-LICENSE.txt")

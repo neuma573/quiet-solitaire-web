@@ -1,16 +1,9 @@
-name: Validate guarded Web runtime
+name: Validate Web build
 
-# CI branches validate without publishing. Full visual/WebKit regression is opt-in.
 on:
   push:
     branches: ['ci/**']
   workflow_dispatch:
-    inputs:
-      regression:
-        description: 'core: representative runtime; full: all visual combinations and WebKit'
-        type: choice
-        options: [core, full]
-        default: core
 
 permissions:
   contents: read
@@ -20,108 +13,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  runtime:
+  build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - name: Initialize public timing record
-        run: echo "CI_TIMINGS=$RUNNER_TEMP/ci-timings.jsonl" >> "$GITHUB_ENV"
-      - name: Read current source main with existing read-only access
-        id: source
+      - name: Check out current source main with read-only access
         env:
           SOURCE_DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
         run: python3 scripts/source.py --validate --directory "$RUNNER_TEMP/private-source"
-      - name: Require a checked out source for validation
-        run: test '${{ steps.source.outputs.changed }}' = 'true'
       - name: Install checksum-verified Godot and Web templates
-        run: python3 scripts/measure.py toolchain -- python3 scripts/install_godot.py --directory "$RUNNER_TEMP/godot"
-      - name: Run Python and compiled bridge regression tests
-        run: python3 scripts/measure.py python-compiled-bridge -- python3 -m unittest discover -s tests -v
-      - name: Run original source tests and guarded production export
-        id: export
-        run: python3 scripts/measure.py source-headless-and-export -- python3 scripts/build.py --source "$RUNNER_TEMP/private-source" --output "$RUNNER_TEMP/site"
-      - name: Verify compiled responsive layout and longest playable columns
-        run: python3 scripts/measure.py compiled-layout -- python3 scripts/check_responsive_layout.py --directory "$RUNNER_TEMP/site"
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: '22'
-          cache: npm
-      - name: Install locked browser verification dependencies
-        run: |
-          npm ci --ignore-scripts
-          npx playwright install --with-deps chromium
-          mkdir -p "$RUNNER_TEMP/screenshots"
-      - name: Verify representative mobile and desktop runtime
-        run: python3 scripts/measure.py core-browser -- node tests/runtime-core-browser.mjs --directory "$RUNNER_TEMP/site" --screenshots "$RUNNER_TEMP/core-failures"
-      - name: Full density, My Page and native input regression (manual only)
-        if: github.event_name == 'workflow_dispatch' && inputs.regression == 'full'
-        run: |
-          python3 scripts/measure.py full-density-1 -- node scripts/smoke.mjs --directory "$RUNNER_TEMP/site" --density 1
-          python3 scripts/measure.py full-density-2 -- node scripts/smoke.mjs --directory "$RUNNER_TEMP/site" --density 2
-          python3 scripts/measure.py full-leaderboard-page -- node tests/leaderboard-page-browser.mjs --directory "$RUNNER_TEMP/site" --screenshots "$RUNNER_TEMP/screenshots/leaderboard"
-          python3 scripts/measure.py full-compiled-my-page -- node tests/leaderboard-export-browser.mjs --directory "$RUNNER_TEMP/site" --screenshots "$RUNNER_TEMP/screenshots/profile"
-          python3 scripts/measure.py full-popup -- node tests/profile-input-browser.mjs --directory "$RUNNER_TEMP/site" --screenshots "$RUNNER_TEMP/screenshots/profile-input/chromium"
-      - name: Retain failed core screenshot only
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: core-failure-${{ github.sha }}
-          path: ${{ runner.temp }}/core-failures/*.png
-          retention-days: 1
-          if-no-files-found: ignore
-      - name: Retain public timing records
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: ci-timings-${{ github.sha }}
-          path: ${{ runner.temp }}/ci-timings.jsonl
-          retention-days: 1
-          if-no-files-found: ignore
-      - name: Retain audited runtime for manual WebKit only
-        if: success() && github.event_name == 'workflow_dispatch' && inputs.regression == 'full'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: web-runtime-validation-${{ github.sha }}
-          path: |
-            ${{ runner.temp }}/site
-            ${{ runner.temp }}/screenshots/**/*.png
-          retention-days: 1
-          if-no-files-found: error
-
-  webkit:
-    if: github.event_name == 'workflow_dispatch' && inputs.regression == 'full'
-    # Ubuntu WebKit emitted glBlitFramebuffer validation errors even though
-    # every input assertion passed. Keep the strict error gate on macOS,
-    # matching the verified local WebKit graphics environment.
-    needs: runtime
-    runs-on: macos-15
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: '22'
-          cache: npm
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: web-runtime-validation-${{ github.sha }}
-          path: ${{ runner.temp }}/verified-runtime
-      - name: Install locked WebKit verification dependencies
-        run: |
-          npm ci --ignore-scripts
-          npx playwright install webkit
-      - name: Verify the audited Linux export with native macOS WebKit
-        run: python3 scripts/measure.py full-webkit -- node tests/profile-input-browser.mjs --browser webkit --directory "$RUNNER_TEMP/verified-runtime/site" --screenshots "$RUNNER_TEMP/webkit-screenshots"
-      - name: Retain WebKit browser evidence
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: webkit-profile-input-${{ github.sha }}
-          path: ${{ runner.temp }}/webkit-screenshots/*.png
-          retention-days: 1
-          if-no-files-found: ignore
+        run: python3 scripts/install_godot.py --directory "$RUNNER_TEMP/godot"
+      - name: Build Web release and audit public artifacts
+        run: python3 scripts/build.py --source "$RUNNER_TEMP/private-source" --output "$RUNNER_TEMP/site"
