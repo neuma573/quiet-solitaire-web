@@ -90,7 +90,7 @@ def main() -> None:
             sha = requested_sha(event, os.environ["GITHUB_EVENT_NAME"]) or head
             deployed = {}
             # Validation is independent of publication deduplication: an already
-            # deployed runtime must still be available for manual core/full tests.
+            # deployed source must still be built on validation branches.
             # The deploy workflow does not pass --validate and keeps its old gate.
             if not args.validate:
                 try:

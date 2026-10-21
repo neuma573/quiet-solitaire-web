@@ -9,16 +9,16 @@ https://neuma573.github.io/quiet-solitaire-web/ 는 계정의 기존 도메인�
 
 ## 자동 배포
 
-현재 원본 호환성 정책은 [Source compatibility gates](docs/source-compatibility.md)를 따릅니다. 아래 특정 SHA의 검토 기록은 참고 정보이며 커밋별 승인 조건은 아닙니다.
+현재 원본 호환성 정책은 [Source compatibility](docs/source-compatibility.md)를 따릅니다. 아래 특정 SHA의 검토 기록은 참고 정보이며 커밋별 승인 조건은 아닙니다.
 
 ```mermaid
 flowchart LR
     A[Private 앱 저장소 main PR 머지] -->|GitHub Webhook| W[Cloudflare Worker · 서명 검증]
     W -->|repository_dispatch · 머지 SHA| B[웹 저장소 GitHub Actions]
     B --> C[읽기 전용 · 정확한 SHA의 임시 Checkout]
-    C --> D[Godot 4.7.2 · 전체 테스트]
+    C --> D[Godot 4.7.2 · 리소스 Import]
     D --> E[단일 스레드 Web Export]
-    E --> F[PCK 공개 범위 검사 · Chromium 실행 검사]
+    E --> F[공개 산출물 · PCK 원본/비밀정보 검사]
     F --> G[GitHub Pages]
 ```
 
@@ -27,10 +27,10 @@ flowchart LR
 - Worker가 `source-main-merged` dispatch에 `merge_commit_sha`를 전달합니다. 원본 Webhook에는 Private PR 정보가 있지만 Public Actions에는 저장소 식별자·SHA·delivery ID만 전달합니다. Worker 요청 로그는 활성화하지 않습니다.
 - 게시된 원본 SHA와 파이프라인 SHA가 같으면 다운로드·빌드·배포를 건너뜁니다.
 - 확인한 40자리 SHA로 checkout합니다. 빌드 중 main이 바뀌면 오래된 결과는 게시하지 않습니다.
-- 원본 공식 명령 `python3 scripts/test.py`의 전체 테스트, Web Export, PCK 공개 범위 검사와 실제 Chromium 검사를 통과한 결과만 게시합니다.
+- 리소스 import와 Web Export가 성공하고 공개 파일 허용 목록·PCK 원본/비밀정보 검사를 통과한 결과만 게시합니다. 웹 CI에서 원본 전체 테스트나 브라우저·게임 동작 회귀 검사를 반복하지 않습니다.
 - 실패한 빌드는 게시 단계에 도달하지 않아 기존 사이트를 유지합니다. Pages 게시 실패도 기존 게시본을 교체하지 않습니다. 게시 후 HTTP 확인 실패와 게시 자체의 실패는 별도로 판단해야 합니다.
 - `Actions → Deploy experimental Web build → Run workflow`로 즉시 확인할 수 있습니다. 선택적인 `source_sha`도 현재 main과 일치해야 게시됩니다.
-- 웹 설정이 main에 바뀌면 재검증합니다. PR 검사는 원본 접근·게시 권한을 사용하지 않습니다.
+- 웹 설정이 main에 바뀌면 빌드 후 배포합니다. `ci/**` 브랜치 push는 읽기 전용 원본 접근으로 빌드만 한 번 실행하며 게시하지 않습니다. PR 이벤트에서 중복 검사를 실행하지 않습니다. 자세한 범위는 [CI 문서](docs/ci.md)를 따릅니다.
 - Worker를 수정한 경우 테스트 후 `npx wrangler deploy`로 별도 게시합니다. GitHub Pages 빌드에는 Cloudflare 인증이 필요하지 않습니다.
 
 ## 원본과 보안
@@ -47,8 +47,8 @@ flowchart LR
 | 배포 토큰/OIDC | Actions가 발급 | 별도 배포 job에서 `pages: write`, `id-token: write` |
 
 SSH 호스트 키는 GitHub HTTPS API에서 받아 검증합니다. 개인 키는 해당 단계의 임시 경로에서 제거합니다.
-원본 checkout은 runner 임시 경로에만 있으며, 게임 실행·테스트 단계에는 SSH 인증 정보를 전달하지 않습니다.
-원본을 Public Git 이력이나 Actions cache에 올리지 않습니다. private 로그와 테스트 보고서는 runner에만 남으며 업로드하지 않습니다.
+원본 checkout은 runner 임시 경로에만 있으며, 빌드·export 단계에는 SSH 인증 정보를 전달하지 않습니다.
+원본을 Public Git 이력이나 Actions cache에 올리지 않습니다. private 빌드 로그와 진단 자료는 runner에만 남으며 업로드하지 않습니다.
 Pages artifact에는 공개 런타임 파일만 포함하고 보존 기간은 1일입니다.
 
 WebAssembly·`.pck`·이미지·컴파일된 GDScript는 플레이에 필요한 공개 런타임입니다.
@@ -82,23 +82,23 @@ GitHub API가 dispatch를 거부하면 Worker는 502를 반환합니다. GitHub 
 ## Web Export 호환성
 
 - 원본 SHA는 `deployment.json`에 추적 정보로 기록하며, SHA가 바뀌었다는 이유만으로 빌드를 중단하지 않습니다. 웹은 공식 **NanumSquare Regular v1.000 (160623_01)**와 기존 Noto Sans CJK KR fallback을 저장소에 포함하고 `web/font.json`의 SHA-256으로 검증합니다. Round·Neo를 사용하지 않으며 빌드와 플레이에 폰트 CDN을 요청하지 않습니다. 출처·버전·재배포 조건은 [폰트 기록](web/fonts/README.md)과 `web/FONT-LICENSE.txt`에 보존합니다.
-- 적용 순서는 **읽기 전용 원본 → hook/XP 7파일 해시 검사 → 임시 복사본의 레이아웃 anchor 유일성·미적용 상태·치환 결과 확인 → 고정 웹 폰트 준비 → 원본 전체 회귀 → 보정 후 hook/XP 해시 검사 → 같은 복사본 export → 컴파일된 반응형 배치·핵심 브라우저 검사**입니다. Caption 보정은 모든 대상 파일을 검사한 뒤 적용하며, 기존 전체 파일 해시는 참고 정보입니다. `web/leaderboard-compatibility.json`의 7파일 계약과 보정 후 `main.gd` 계약은 유지합니다. 실제 hook/XP 계약 또는 패치 조건이 맞지 않으면 중단하지만, 원본 SHA 자체나 `visuals.gd` 전체 해시로 차단하지 않습니다.
+- 적용 순서는 **읽기 전용 원본 → 임시 복사본의 레이아웃 anchor 유일성·미적용 상태·치환 결과 확인 → 고정 웹 폰트 준비·import → Web Export → 공개 산출물·PCK 원본/비밀정보 검사**입니다. Caption 보정은 모든 대상 파일을 검사한 뒤 적용합니다. 원본 SHA와 hook/XP·보정 후 `main.gd`를 포함한 전체 파일 해시는 승인 조건으로 사용하지 않으며, 호환성 manifest 갱신을 요구하지 않습니다.
 - 이전 검토 이력 (`35615547…` 기준): `9e7ad42… → 35615547…`의 변경 8파일을 검토했습니다. 게임·보드·통계·프로필·XP의 기존 감시 7파일은 동일하며, 새 거부 동작은 모드 선택 카드 시연에 한정됩니다. `visuals.gd`에는 설명 글자 크기와 거부 시연 대기 상수만 추가되어 반응형 보드가 사용하는 여백·간격·카드 비율 상수는 유지됩니다. 해당 파일의 전체 해시를 새 원본에 맞춰 갱신했으며, 관찰자·XP 계산·운영 API는 변경하지 않습니다. NanumSquare에서는 한국어 안내가 원래 342px 폭에 들어가므로 여백을 바꾸지 않습니다. 일본어는 올바른 fallback으로 렌더한 가장 긴 문구가 344px여서 모드 선택 화면의 일본어 좌우 여백만 24→23으로 보정합니다. Undo/Pause는 확대된 터치 영역을 정수 논리 좌표로 올려 Container 반올림의 중심 오차를 없앱니다. 글자 크기 16·번역·원본 assertion은 유지합니다.
 - 원본 README, 설치 엔진과 공식 템플릿을 **Godot 4.7.2 stable**로 맞추고 공식 SHA256을 확인합니다. 원본 엔진 버전이 바뀌면 자동 배포를 중단하므로 `godot-version.json`을 검토해야 합니다.
 - GDScript·GL Compatibility를 사용하며 WebAssembly·WebGL 2가 필요합니다. 스레드·GDExtension을 끕니다.
 - 원본의 **390×760** 기준과 `canvas_items/expand` 배치를 사용합니다. 너비 600px 이하의 세로 창에서는 캔버스가 브라우저의 실제 가용 폭·높이를 채우고 Godot가 논리 화면을 넓히거나 높여 메뉴·마이페이지·보드를 재배치합니다. 320×568, 390×664처럼 짧은 화면도 높이에 맞춘 고정 화면의 좌우 레터박스를 남기지 않습니다. CSS와 렌더링 버퍼의 화면비를 맞추므로 카드 모양을 늘이거나 화면을 자르지 않습니다. 정수 렌더링 픽셀에 맞추면서 세로에만 기기 픽셀 1개 미만의 차이가 생길 수 있습니다. 브라우저 확대 중에는 layout viewport 폭을 기준으로 삼아 resize와 확대가 서로 증폭되지 않게 합니다.
-- 짧고 넓은 세로 화면에서는 웹 전용 관찰자가 보드 높이에 맞춰 카드 열의 최대 폭을 제한하고 중앙에 둡니다. 숨은 카드 6장과 노출 카드 13장의 최장 열에서도 가용 높이 568px 이상인 검증 조합은 숫자·무늬 노출 높이 14 CSS px을 확보합니다. 가용 높이 460~504px인 작은 브라우저 화면에서는 기준 보드보다 카드를 작게 만들지 않고 기존 노출 높이를 보존합니다. 카드 비율·게임 규칙·입력 처리는 원본 그대로이며, 화면 배치 변경으로 게임 상태나 Undo 이력을 바꾸지 않습니다. 마이페이지의 긴 통계는 기존 세로 스크롤로 접근합니다. 게임이 직접 그리는 라이트·다크 배경이 캔버스 양 끝까지 채워지는 것을 검사하며 HTML 배경색을 통일해 여백을 가리지 않습니다.
-- PC에서는 기존 390×760 크기를 중앙에 표시하고, 더 작은 가로 창에서는 같은 비율로 축소합니다. 데스크톱 전체 폭을 강제하지 않으며 좁은 세로 창에서는 동일한 모바일 규칙을 사용합니다. 변경은 웹 shell·웹 전용 관찰자에만 적용하고 원본 checkout과 프로젝트 설정은 수정하지 않습니다. `visuals.gd`의 렌더러·배치 변경은 전체 파일 해시 대신 import·시작·export와 핵심 Web smoke로 확인합니다.
-- 원본은 보드의 중복 입력을 막기 위해 터치의 마우스 에뮬레이션을 끕니다. Godot 4.7.2의 embedded `PopupMenu`는 마우스/키보드로 항목을 선택·닫기 때문에, 웹 브리지는 마이페이지 난이도 팝업이 표시될 때만 에뮬레이션을 켭니다. 닫힘·페이지 해제 시 원래 설정으로 복원하며, 바깥 누름으로 닫은 경우 해당 누름의 해제까지 전달한 뒤 복원해 눌린 포인터가 남지 않게 합니다. 게임 규칙·통계 필터·원본 파일은 변경하지 않습니다. 소스 계약 검사 범위는 위 정책을 따릅니다.
+- 짧고 넓은 세로 화면에서는 웹 전용 관찰자가 보드 높이에 맞춰 카드 열의 최대 폭을 제한하고 중앙에 둡니다. 숨은 카드 6장과 노출 카드 13장의 최장 열에서도 가용 높이 568px 이상인 검증 조합은 숫자·무늬 노출 높이 14 CSS px을 확보합니다. 가용 높이 460~504px인 작은 브라우저 화면에서는 기준 보드보다 카드를 작게 만들지 않고 기존 노출 높이를 보존합니다. 카드 비율·게임 규칙·입력 처리는 원본 그대로이며, 화면 배치 변경으로 게임 상태나 Undo 이력을 바꾸지 않습니다. 마이페이지의 긴 통계는 기존 세로 스크롤로 접근합니다. 게임 배경과 반응형 배치 동작은 그대로 유지하지만, 렌더링 회귀 검사는 웹 CI의 필수 단계가 아닙니다.
+- PC에서는 기존 390×760 크기를 중앙에 표시하고, 더 작은 가로 창에서는 같은 비율로 축소합니다. 데스크톱 전체 폭을 강제하지 않으며 좁은 세로 창에서는 동일한 모바일 규칙을 사용합니다. 변경은 웹 shell·웹 전용 관찰자에만 적용하고 원본 checkout과 프로젝트 설정은 수정하지 않습니다. `visuals.gd`를 포함한 원본 변경은 전체 파일 해시가 아닌 import·export 성공 여부로 빌드 가능성을 확인하며, 화면 동작까지 보증하지는 않습니다.
+- 원본은 보드의 중복 입력을 막기 위해 터치의 마우스 에뮬레이션을 끕니다. Godot 4.7.2의 embedded `PopupMenu`는 마우스/키보드로 항목을 선택·닫기 때문에, 웹 브리지는 마이페이지 난이도 팝업이 표시될 때만 에뮬레이션을 켭니다. 닫힘·페이지 해제 시 원래 설정으로 복원하며, 바깥 누름으로 닫은 경우 해당 누름의 해제까지 전달한 뒤 복원해 눌린 포인터가 남지 않게 합니다. 게임 규칙·통계 필터·원본 파일은 변경하지 않습니다. 빌드 검사 범위는 [CI 문서](docs/ci.md)를 따릅니다.
 - iOS 네이티브 설정·전환은 기존 Godot 폴백을 사용하고 Game Center는 사용할 수 없습니다. 네이티브 파일은 내보내지 않습니다.
-- 깨끗한 checkout의 CSV 번역과 글꼴을 생성하기 위해 임시 복사본에서 번역 참조를 잠시 비우고 import합니다. 이후 번역 참조를 복원하고 웹 전용 테마를 적용한 상태로 원본의 공식 전체 테스트를 실행합니다. 같은 테마로 Web Export하며 원본 checkout과 게임 코드·번역·씬·테스트는 바꾸지 않습니다.
-- `web/theme.tres`는 NanumSquare와 Noto Sans CJK를 묶고, Web의 `SystemFont`가 사용하는 기본 테마 글꼴도 지정합니다. NanumSquare가 일본어 코드포인트 일부를 빈 윤곽으로 매핑하므로 빈 routing anchor와 FontFile script 우선순위로 한자·히라가나·가타카나를 Noto에 연결합니다. Latin·한글은 NanumSquare를 사용하고 시스템 fallback은 차단합니다. Noto의 큰 기본 행 높이가 영어에도 적용되는 Godot 동작에 맞춰 `web/prepare_fonts.gd`에서 CJK의 행 상자를 1.25 em으로 설정하고, 일본어 버튼에는 글꼴의 비례 자간 기능 `palt`를 사용합니다. 글리프 크기와 다운로드한 폰트 데이터는 유지하며, 테스트의 최소 카드 공간 기준을 변경하지 않습니다.
-- Linux 검증에서는 빌드별 Fontconfig를 빈 디렉터리로 제한하고 처리된 FontFile을 사용합니다. 원본 TTF를 Fontconfig가 직접 검색해 script 설정을 우회하지 않도록 합니다. runner에 설치된 시스템 글꼴에 따라 레이아웃 결과가 달라지지 않게 하며 시스템 전체의 글꼴 설정은 바꾸지 않습니다. 웹 글꼴 설정은 회귀 테스트와 내보내기에 동일하게 적용합니다.
+- 깨끗한 checkout의 CSV 번역과 글꼴을 생성하기 위해 임시 복사본에서 번역 참조를 잠시 비우고 import합니다. 이후 번역 참조를 복원하고 웹 전용 테마로 Web Export합니다. 원본 checkout과 게임 코드·번역·씬·테스트는 바꾸지 않으며 원본 전체 테스트를 반복 실행하지 않습니다.
+- `web/theme.tres`는 NanumSquare와 Noto Sans CJK를 묶고, Web의 `SystemFont`가 사용하는 기본 테마 글꼴도 지정합니다. NanumSquare가 일본어 코드포인트 일부를 빈 윤곽으로 매핑하므로 빈 routing anchor와 FontFile script 우선순위로 한자·히라가나·가타카나를 Noto에 연결합니다. Latin·한글은 NanumSquare를 사용하고 시스템 fallback은 차단합니다. Noto의 큰 기본 행 높이가 영어에도 적용되는 Godot 동작에 맞춰 `web/prepare_fonts.gd`에서 CJK의 행 상자를 1.25 em으로 설정하고, 일본어 버튼에는 글꼴의 비례 자간 기능 `palt`를 사용합니다. 글리프 크기와 다운로드한 폰트 데이터는 유지합니다.
+- Linux 빌드에서는 빌드별 Fontconfig를 빈 디렉터리로 제한하고 처리된 FontFile을 사용합니다. 원본 TTF를 Fontconfig가 직접 검색해 script 설정을 우회하지 않도록 합니다. runner에 설치된 시스템 글꼴에 따라 레이아웃 결과가 달라지지 않게 하며 시스템 전체의 글꼴 설정은 바꾸지 않습니다. 웹 글꼴 설정은 import와 내보내기에 적용합니다.
 - 임시 복사본의 iOS export preset은 Web preset으로 대체합니다. 배포에는 script 설정과 행 높이를 처리한 글꼴 리소스를 포함하며 준비에 사용한 원본 TTF·OTF를 중복으로 넣지 않습니다.
 - 브라우저는 원본의 시스템 폰트를 제공하지 않아 웹 글꼴이 필요합니다. 공식 NanumSquare와 기존 Noto의 고정 파일을 웹 저장소에 포함하고 `web/font.json`의 SHA256으로 검증합니다. 저작권 고지와 SIL OFL 1.1 전문은 배포물의 `FONT-LICENSE.txt`에 포함하며 원본에는 폰트를 추가하지 않습니다.
 - 런타임 배치 JSON 두 개(`assets/deals/draw-1-decks.json`, `assets/deals/draw-3-decks.json`)는 Web preset에서 명시적으로 포함합니다. PCK 검사는 둘 중 하나라도 빠지거나 다른 JSON(개발용 해답 포함)이 들어가면 게시를 거부합니다.
 - PWA·오프라인 캐시는 추가하지 않습니다. 원본과 동일하게 진행 중인 게임 재개 저장은 없으며 설정·통계 보존은 브라우저 IndexedDB 정책의 영향을 받습니다.
-- Chromium에서 실제 실행을 확인합니다. iPhone Safari의 성능·터치·안전 영역, VoiceOver는 별도 실기기 검증 대상입니다.
+- Chromium·WebKit 렌더링, iPhone Safari의 성능·터치·안전 영역과 VoiceOver는 별도의 선택적 검증 대상이며 웹 CI에 포함하지 않습니다.
 
 ## 독립 리더보드 페이지
 
@@ -116,15 +116,7 @@ GitHub API가 dispatch를 거부하면 Worker는 502를 반환합니다. GitHub 
 - 순위는 기존 서버의 XP 내림차순과 동점 순서를 유지합니다. 스키마나 순서가 잘못된 응답은 표시하지 않습니다.
 - 위 경로는 이 변경을 main에 반영하고 기존 배포 검사를 통과한 뒤 제공됩니다.
 
-페이지·API 응답 테스트와 실제 Chromium 검사는 다음 명령으로 실행합니다.
-브라우저 검사에 등장하는 순위는 가로챈 로컬 테스트 데이터이며 실제 순위가 아닙니다.
-
-```sh
-node --test tests/*.test.mjs
-node tests/leaderboard-page-browser.mjs
-# 전체 Godot 빌드 결과의 하위 경로와 자산 검사
-node tests/leaderboard-page-browser.mjs --directory /path/to/export
-```
+페이지·API·브라우저 검사 도구는 필요할 때 선택적으로 실행할 수 있지만 웹 CI나 배포의 필수 단계는 아닙니다. 현재 자동 검사 범위는 [CI 문서](docs/ci.md)를 따릅니다.
 
 ## 웹 리더보드
 
@@ -156,62 +148,20 @@ node tests/leaderboard-page-browser.mjs --directory /path/to/export
   브라우저 확대 배율이나 viewport 확대 허용 설정을 강제로 변경하지 않습니다.
 - 서버의 지급량 계산·중복 지급 방지·기본 요청 제한은 포함하지만, 브라우저의 승리 보고 자체를
   증명하지는 않습니다. 결과는 클라이언트 신고 기록입니다. 상금이나 경쟁 대회의 검증 수단으로 사용할 수 없습니다.
-- 게임 연결은 7개 hook/XP 파일과 보정 후 `main.gd` 계약을 확인하고, 실제 계약이 맞지 않으면 빌드를 중단합니다.
-  SHA 변경만으로 manifest를 갱신할 필요는 없으며, hook/XP 계약이나 실제 패치 anchor가 바뀔 때 어댑터를 검토합니다.
+- 게임 연결용 관찰자는 임시 Web 복사본에 그대로 포함합니다. 원본 SHA나 전체 파일 해시를 승인 조건으로 검사하지 않으며, 임시 복사본의 필수 보정 anchor가 맞지 않을 때 해당 보정을 중단합니다.
 
-실제 로컬 Workers/D1와 전체 원본 테스트·Web Export·PCK·1×/2× 실행 검사를 통과했습니다.
+이전 검증에서는 실제 로컬 Workers/D1와 전체 원본 테스트·Web Export·PCK·1×/2× 실행 검사를 통과했습니다. 이 기록은 당시 검증 결과이며 현재 필수 CI 범위를 뜻하지 않습니다.
 초기 WSL 메뉴 테스트 실패는 실행 파일·사용자 데이터·로그까지 Linux 네이티브 경로에 둔
 환경에서 원본 수정 없이 해소됐습니다. 환경 비교와 재현 명령은 [검증 기록](leaderboard/VERIFICATION.md)에 기록했습니다.
 
-추가 검증:
-
-```sh
-node --test tests/*.test.mjs
-python3 -m unittest discover -s tests -v
-# Playwright 설치 후 선택적으로 실행 (모든 HTTPS 요청을 로컬에서 가로채며 외부 통신 없음)
-node tests/leaderboard-ui-browser.mjs
-node tests/profile-focus-browser.mjs
-# 같은 대표 포커스·키보드 배치 검사만 WebKit 모바일 에뮬레이션으로 실행
-node tests/profile-focus-browser.mjs --webkit
-node tests/leaderboard-api-browser.mjs
-# 실제 공개 compiled PCK의 26개 배치·흑백·긴 열·드래그/Undo 검사
-python3 scripts/check_responsive_layout.py --directory /path/to/export --godot /path/to/godot
-# 실제 Web Export의 마이페이지 연결 검사
-node tests/leaderboard-export-browser.mjs --directory /path/to/export
-# 실제 HTTP에서 터치/마우스 팝업·HTML 포커스 복귀·팝업 해제 후 보드 입력 검사
-node tests/profile-input-browser.mjs --directory /path/to/export --screenshots /tmp/profile-input
-# WebKit 모바일 에뮬레이션 (실제 iPhone/Android 실기기 검증과 구분)
-npx playwright install webkit
-node tests/profile-input-browser.mjs --browser webkit --directory /path/to/export --screenshots /tmp/profile-webkit
-# 배포본의 같은 결함 재현 (게스트 API 쓰기 없음)
-node tests/profile-input-browser.mjs --url https://neuma573.com/quiet-solitaire-web/
-```
-
-`GODOT_BIN`을 설정하면 Python 검증에 실제 Godot 어댑터 수명주기 검사도 포함됩니다.
-브라우저 검사는 `CHROME_BIN`으로 설치된 Chromium 계열 브라우저를 지정할 수 있습니다.
-API 브라우저 검사는 실제 핸들러와 SQLite를 사용하지만 Cloudflare 런타임·배포 검사를 대신하지는 않습니다.
-`ci/**` 검증은 Linux에서 원본 테스트·export·Chromium 검사를 통과한 동일 공개 런타임을
-macOS로 가져와 WebKit의 터치·포커스·게임 입력을 검사합니다. Ubuntu WebKit에서는 모든 입력 assertion이
-통과한 뒤 `glBlitFramebuffer` 검증 오류가 수집되어 실패했으므로, Linux WebKit까지 검증됐다고 주장하지 않습니다.
-macOS WebKit 검사도 모든 콘솔·Godot·자산 오류를 실패로 처리하며 오류 예외 목록을 추가하지 않습니다.
+브라우저·API 진단 도구는 선택적 수동 검증용으로 남겨 두며 웹 CI에서는 실행하지 않습니다.
 
 ## 로컬 빌드 검증
-
-```sh
-python3 -m unittest discover -s tests -v
-node --test tests/worker.test.mjs
-npm ci --ignore-scripts
-npx wrangler deploy --dry-run --outdir /tmp/quiet-web-worker-check
-npx playwright install chromium
-```
 
 원본을 별도 checkout하고 비어 있는 출력 경로를 지정합니다. 설치된 Godot와 Web export templates는 같은 4.7.2 버전이어야 합니다.
 
 ```sh
 python3 scripts/build.py --source /path/to/private-checkout --output /tmp/quiet-web-site --godot /path/to/godot
-node scripts/smoke.mjs --directory /tmp/quiet-web-site
-node scripts/smoke.mjs --directory /tmp/quiet-web-site --locale ja-JP --screenshot /tmp/quiet-web-ja.png
-node scripts/smoke.mjs --url https://neuma573.com/quiet-solitaire-web/
 ```
 
 macOS에 템플릿을 전역 설치하지 않으려면 `build.py`에 공식 `web_nothreads_release.zip` 경로를 `--template`로 전달합니다.

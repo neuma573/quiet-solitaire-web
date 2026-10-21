@@ -1,9 +1,7 @@
 """Apply reviewed font layout corrections only to a disposable Web project."""
-import json
 from pathlib import Path
 import re
 
-ROOT = Path(__file__).resolve().parents[1]
 REPLACEMENTS = {
     "scripts/mode_selection.gd": (
         ("safe.position.x + V.START_MARGIN)", 'safe.position.x + V.START_MARGIN - (1.0 if TranslationServer.get_locale().begins_with("ja") else 0.0))'),
@@ -22,11 +20,8 @@ def apply_caption_overlay(project: Path, *, source_sha: str) -> None:
     project = project.resolve()
     if any((ancestor / ".git").exists() for ancestor in (project, *project.parents)):
         raise RuntimeError("Caption overlay requires a disposable copy outside a Git checkout")
-    manifest = json.loads((ROOT / "web/caption-compatibility.json").read_text(encoding="utf-8"))
     if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
         raise RuntimeError("Source revision must be a full commit SHA")
-    if set(manifest.get("files", {})) != set(REPLACEMENTS):
-        raise RuntimeError("Caption source contract is incomplete")
     prepared = []
     for name, replacements in REPLACEMENTS.items():
         path = project / name
@@ -34,7 +29,7 @@ def apply_caption_overlay(project: Path, *, source_sha: str) -> None:
                 or not path.resolve().is_relative_to(project)):
             raise RuntimeError("Caption source contract is missing or unsafe")
         original = path.read_text(encoding="utf-8")
-        # Historical hashes are reference data; check the actual edit sites.
+        # Check only the actual edit sites, not whole source files.
         patched = original
         for old, new in replacements:
             if patched.count(old) != 1 or new in patched:

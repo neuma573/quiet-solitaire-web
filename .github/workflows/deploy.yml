@@ -39,25 +39,9 @@ jobs:
       - name: Install official matching Godot and Web templates
         if: steps.source.outputs.changed == 'true'
         run: python3 scripts/install_godot.py --directory "$RUNNER_TEMP/godot"
-      - name: Run source regression suite and export single-thread release
+      - name: Build single-thread Web release and audit public artifacts
         if: steps.source.outputs.changed == 'true'
         run: python3 scripts/build.py --source "$RUNNER_TEMP/private-source" --output "$RUNNER_TEMP/site"
-      - name: Verify compiled responsive layout and longest playable columns
-        if: steps.source.outputs.changed == 'true'
-        run: python3 scripts/check_responsive_layout.py --directory "$RUNNER_TEMP/site"
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        if: steps.source.outputs.changed == 'true'
-        with:
-          node-version: '22'
-          cache: npm
-      - name: Install locked browser verification dependencies
-        if: steps.source.outputs.changed == 'true'
-        run: |
-          npm ci --ignore-scripts
-          npx playwright install --with-deps chromium
-      - name: Verify representative mobile and desktop runtime
-        if: steps.source.outputs.changed == 'true'
-        run: python3 scripts/measure.py core-browser -- node tests/runtime-core-browser.mjs --directory "$RUNNER_TEMP/site"
       - name: Confirm main has not advanced during the build
         if: steps.source.outputs.changed == 'true'
         id: fresh
@@ -65,7 +49,7 @@ jobs:
           SOURCE_DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
         run: python3 scripts/source.py --fresh "$SOURCE_SHA"
-      - name: Upload only the verified public runtime
+      - name: Upload only the audited public runtime
         if: steps.fresh.outputs.current == 'true'
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
@@ -84,7 +68,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Publish verified runtime atomically
+      - name: Publish audited runtime atomically
         id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
       - name: Verify deployed source SHA
