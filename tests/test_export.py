@@ -161,6 +161,7 @@ class PublicPackTests(unittest.TestCase):
     def test_private_source_development_files_and_unreferenced_data_are_blocked(self):
         files, _ = runtime()
         forbidden = ["scripts/main.gd", "test/fixture.gdc", "docs/design.txt", "native/plugin.a", "token",
+                     "scripts/ci/toolchain.json",
                      "assets/deals/draw-1-solutions.json", "assets/deals/draw-3-solutions.json",
                      "assets/deals/draw-1-solutions.JSON", "assets/branding/Contents.Json",
                      "assets/branding/Contents.json", "unexpected.json", "secrets/signing.p12",
@@ -321,7 +322,8 @@ class PublicPackTests(unittest.TestCase):
             self.assertFalse(any(fnmatch.fnmatch(name, pattern) for pattern in exclude), name)
         for name in ("assets/deals/draw-1-solutions.json", "assets/deals/draw-3-solutions.json",
                      "assets/branding/QuietLaunchBackground.colorset/Contents.json",
-                     "docs/report.json", "tools/fixture.json", "test/fixture.json"):
+                     "docs/report.json", "tools/fixture.json", "test/fixture.json",
+                     "scripts/ci/toolchain.json", "scripts/ci/nested/fixture.json", "scripts/ci/check.gdc"):
             self.assertTrue(any(fnmatch.fnmatch(name, pattern) for pattern in exclude), name)
 
     def test_duplicate_pack_paths_are_rejected(self):
