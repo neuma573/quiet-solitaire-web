@@ -7,6 +7,15 @@
 https://neuma573.github.io/quiet-solitaire-web/ 는 계정의 기존 도메인으로 이동합니다.
 이 실험용 Pages에만 HTTPS를 적용했고 다른 저장소의 도메인 설정은 변경하지 않았습니다.
 
+## 지원·iOS 개인정보 페이지
+
+지원 페이지와 iOS 개인정보 처리방침은 `web/support/`, `web/privacy/`에 있습니다.
+운영자 나호진, 지원 문의 처리 완료 후 1년 보관·삭제 기준을 반영했습니다.
+지원: https://neuma573.com/quiet-solitaire-web/support/
+개인정보: https://neuma573.com/quiet-solitaire-web/privacy/
+이 방침은 iOS 앱을 대상으로 하며 웹 리더보드의 개인정보 방침을 대신하지 않습니다.
+검증 기록과 지속적으로 지켜야 할 운영 기준은 [지원·개인정보 검토 기록](docs/support-privacy-review.md)을 참고하세요.
+
 ## 자동 배포
 
 현재 원본 호환성 정책은 [Source compatibility](docs/source-compatibility.md)를 따릅니다. 아래 특정 SHA의 검토 기록은 참고 정보이며 커밋별 승인 조건은 아닙니다.
