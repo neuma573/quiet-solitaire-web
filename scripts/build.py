@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PUBLIC_WEB_ASSETS = (
     "leaderboard.mjs", "leaderboard-api.mjs", "leaderboard.css", "leaderboard-config.json",
     "leaderboard/index.html", "leaderboard/page.css", "leaderboard/page.mjs",
+    "support/index.html", "privacy/index.html", "information.css",
 )
 
 
@@ -32,7 +33,7 @@ def copy_public_web_assets(output: Path) -> None:
         destination = output / name
         if (asset.is_symlink() or asset.parent.is_symlink() or not asset.is_file()
                 or destination.is_symlink() or destination.parent.is_symlink()):
-            raise RuntimeError("Required public leaderboard asset is missing or unsafe")
+            raise RuntimeError("Required public web asset is missing or unsafe")
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(asset, destination)
 
