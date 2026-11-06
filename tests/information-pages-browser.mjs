@@ -64,7 +64,8 @@ try {
         if (javaScriptEnabled && [1440, 390].includes(width)) {
           await page.screenshot({ path: join(screenshots, `${name}-${width}.png`), fullPage: false });
         }
-        if (name === 'privacy') assert.ok(await page.getByText('Draft for review, not an effective policy.', { exact: true }).isVisible());
+        assert.equal(await page.locator('meta[name="robots"][content="noindex"], .review-note').count(), 0);
+        if (name === 'privacy') assert.ok(await page.locator('time[datetime="2026-11-06"]').isVisible());
       }
       await page.goto(origin + prefix + name + '/');
       await page.keyboard.press('Tab');

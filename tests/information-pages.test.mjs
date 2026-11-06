@@ -20,16 +20,15 @@ test('support and privacy are readable static pages with the approved contact', 
   }
 });
 
-test('draft privacy policy keeps iOS scope, operator review and Apple processing explicit', async () => {
+test('published privacy policy keeps iOS scope, approved operator and retention explicit', async () => {
   const html = await source('privacy/index.html');
-  assert.match(html, /<meta name="robots" content="noindex">/);
-  assert.match(html, /Draft for review, not an effective policy/);
-  assert.match(html, /data-policy-effective-date="pending"/);
-  assert.match(html, /actual publication date/);
+  assert.match(html, /<time datetime="2026-11-06">/);
+  assert.match(html, /Effective and last updated: November 6, 2026/);
+  assert.doesNotMatch(html, /초안|Draft for review|data-policy-effective-date="pending"|noindex|review-note/);
   assert.match(html, /<strong lang="ko">나호진<\/strong>/);
   assert.match(html, /문의 처리 완료일부터 1년간 보관한 뒤 삭제합니다/);
   assert.match(html, /one year after the inquiry is resolved, then deleted/);
-  assert.match(html, /This web page does not automatically delete email/);
+
   assert.match(html, /experimental web game and shared leaderboard/);
   assert.match(html, /does not submit scores, XP or achievements to Game Center/);
   assert.match(html, /https:\/\/www\.apple\.com\/legal\/privacy\/data\/en\/game-center\//);
@@ -39,9 +38,7 @@ test('draft privacy policy keeps iOS scope, operator review and Apple processing
 
 test('support distinguishes web server deletion from cookie clearing and device data', async () => {
   const html = await source('support/index.html');
-  assert.match(html, /<meta name="robots" content="noindex">/);
-  assert.match(html, /Draft support information/);
-  assert.match(html, /approved plan, not yet an effective policy/);
+  assert.doesNotMatch(html, /초안|Draft support|not yet an effective policy|noindex/);
   assert.match(html, /Clearing cookies alone can leave the server records in place/);
   assert.match(html, /It does not erase device game data or local statistics/);
   assert.match(html, /Restoring an in-progress board and undo history after restarting the app is not currently supported/);
