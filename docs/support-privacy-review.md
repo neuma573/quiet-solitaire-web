@@ -93,11 +93,14 @@ are ignored under `artifacts/information-pages/`. `PLAYWRIGHT_MODULE` and
 - Python unit tests: 39 passed on the final policy text.
 - Node tests: 75 passed on the final policy text.
 - `git diff --check` and browser-test syntax: passed.
-- Earlier Mac review: 16 viewport/JavaScript combinations passed using a
-  corrected test copy; ten screenshots were opened with no clipping/overlap.
-- The `addStyleTag` call that stalled with JavaScript disabled was replaced with
-  synchronous DOM insertion. Language links now have a minimum width of 44px.
-- Final publication-version browser verification is being completed on the Mac
-  before merging; its result must replace this pending item.
+- Final Mac browser review on 2026-11-06: the committed browser test at
+  `a38c4667aacc5caea911b9d2ba69b7b29be4126a` passed unchanged, exit code 0.
+  All 16 viewport/JavaScript combinations, 200% body text, 44×44px touch
+  targets, keyboard navigation and relative links passed. All 84 requests
+  stayed local; there were no external requests or cookies/storage writes.
+- Desktop, mobile and 320px screenshots were opened for visual inspection.
+  No clipping or overlap remained; the 320px Korean link measured 44×44px.
+  Both languages, publication date and absence of draft/noindex text were
+  checked. No temporary test patch was needed.
 - Full Godot export is performed by the existing deployment workflow, not by
   the static-page tests. Real-device/App Store behavior is a separate check.
